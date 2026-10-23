@@ -10,7 +10,7 @@ Generate Roblox R15 animations with the AI you already pay for. Describe a motio
 - **Built-in animation rules.** Hand and foot targets (IK), planted feet that don't slide, automatic grounding, spins and flips, and checks for snapping joints or limbs inside the body.
 - **Visual review.** Optionally the model looks at a contact sheet of its own draft and fixes what it sees.
 - **Compare models.** One prompt, several models, results play in sync.
-- **Library.** Folders, search, rename, star, bulk export, bulk send to Studio.
+- **Library.** Folders, search, rename, star, bulk export, bulk send to Studio. Five example clips (idle, walk, wave, cheer, jump) are there from the first start.
 - **Roblox Studio bridge.** Send clips to Studio, play them on a preview rig or on your avatar in a playtest, and import versions you refined in the Animation Editor.
 
 ## Quick start
@@ -60,6 +60,7 @@ Details and the Roblox measurements behind the preview: [docs/how-it-works.md](d
 
 ```
 prompts/            system prompt and presets (edit these to tune results)
+examples/           example clips added to the library on first start
 src/core/           rig, animation pipeline, IK, renderer (no dependencies)
 src/server/         local web server, providers, library, Studio bridge
 web/                the browser app (plain ES modules, three.js from a CDN)
@@ -67,7 +68,7 @@ test/               node --test suite with Roblox reference values
 data/               your clips and settings (created on first start, not in git)
 ```
 
-Run the tests with `npm test`.
+Run the tests with `npm test`. After improving the clips in the library folder *Examples*, `npm run save-examples` writes them back to `examples/`.
 
 ## Privacy
 

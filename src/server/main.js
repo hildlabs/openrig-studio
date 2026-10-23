@@ -173,6 +173,8 @@ server.on('error', e => {
 });
 server.listen(PORT, HOST, async () => {
   console.log(`OpenRig Studio is running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  const examples = await lib.seedExamples().catch(e => { console.error(`Could not add the example clips: ${e.message}`); return 0; });
+  if (examples) console.log(`  Added ${examples} example clips to the library (folder "Examples").`);
   const providers = await listProviders();
   for (const p of providers) console.log(`  [${p.available ? 'x' : ' '}] ${p.label}${p.available ? '' : p.kind === 'api' ? ' (add a key in Settings)' : ' (not installed)'}`);
 });

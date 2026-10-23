@@ -15,6 +15,11 @@
     "prompt": { "en": "A relaxed idle that loops seamlessly.", "de": "Ein entspanntes Idle, das nahtlos loopt." }
   },
   {
+    "id": "walk",
+    "title": { "en": "Walk cycle", "de": "Gehen" },
+    "prompt": { "en": "A friendly, relaxed walk cycle in place that loops seamlessly.", "de": "Ein freundlicher, lockerer Gang auf der Stelle, der nahtlos loopt." }
+  },
+  {
     "id": "jump",
     "title": { "en": "Jump and land", "de": "Sprung mit Landung" },
     "prompt": { "en": "A playful jump with a soft landing.", "de": "Ein verspielter Sprung mit weicher Landung." }

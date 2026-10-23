@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
-import { DATA } from './settings.js';
+import { ROOT, DATA } from './settings.js';
 import { prepare, restClip } from '../core/anim.js';
 
 const CLIPS = path.join(DATA, 'clips');
@@ -86,6 +86,29 @@ export async function duplicateClip(id) {
 export async function trashClip(id) {
   await mkdir(TRASH, { recursive: true });
   await rename(clipPath(id), path.join(TRASH, `${id}-${Date.now()}.json`));
+}
+
+// Bundled examples (examples/*.json) are copied into the library once, into the folder
+// "Examples". data/examples.json remembers which ones were added, so deleted ones stay deleted.
+const EXAMPLES = path.join(ROOT, 'examples');
+const SEEDED = path.join(DATA, 'examples.json');
+export async function seedExamples() {
+  if (!existsSync(EXAMPLES)) return 0;
+  let seeded = [];
+  try { seeded = JSON.parse(await readFile(SEEDED, 'utf8')); } catch { /* first start */ }
+  let added = 0;
+  for (const f of readdirSync(EXAMPLES).filter(f => f.endsWith('.json')).sort()) {
+    const key = f.slice(0, -5);
+    if (seeded.includes(key)) continue;
+    const clip = JSON.parse(await readFile(path.join(EXAMPLES, f), 'utf8'));
+    let id = key, n = 2;
+    while (existsSync(clipPath(id))) id = `${key}-${n++}`;
+    await saveClip({ ...clip, id, folder: 'Examples', createdAt: now() });
+    seeded.push(key);
+    added++;
+  }
+  if (added) await writeJson(SEEDED, seeded);
+  return added;
 }
 
 // Folders exist on their own so empty ones stay visible.

@@ -5,14 +5,25 @@
   "license": "MIT",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server/main.js",
-    "test": "node --test"
+    "test": "node --test",
+    "save-examples": "node scripts/save-examples.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.2.0",
     "openai": "^7.43.0"
   },
-  "keywords": ["roblox", "animation", "r15", "keyframes", "claude", "codex", "ai"]
+  "keywords": [
+    "roblox",
+    "animation",
+    "r15",
+    "keyframes",
+    "claude",
+    "codex",
+    "ai"
+  ]
 }
