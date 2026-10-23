@@ -2,7 +2,9 @@
 import { t } from './i18n.js';
 
 export async function api(url, { method = 'GET', body } = {}) {
-  const res = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  // The server only accepts changes sent as JSON (see trusted() in src/server/main.js).
+  const headers = method === 'GET' ? {} : { 'Content-Type': 'application/json' };
+  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const isJson = (res.headers.get('content-type') ?? '').includes('json');
   const data = isJson ? await res.json() : await res.text();
   if (!res.ok) throw new Error(data?.error ?? res.statusText);

@@ -68,11 +68,17 @@ test/               node --test suite with Roblox reference values
 data/               your clips and settings (created on first start, not in git)
 ```
 
-Run the tests with `npm test`. After improving the clips in the library folder *Examples*, `npm run save-examples` writes them back to `examples/`.
+## Contributing
+
+Issues and pull requests are welcome. Most of the animation quality comes from `prompts/system.md`, so prompt improvements are as valuable as code. Before opening a pull request:
+
+- Run `npm test`. It checks the Roblox reference values and that every example clip passes the checks.
+- If you improved the example clips in the library folder *Examples*, run `npm run save-examples` to write them back to `examples/`.
+- Keep it dependency-free in `src/core/` and `web/`; the API SDKs are the only packages.
 
 ## Privacy
 
-Everything runs locally. Prompts and clip data are sent only to the AI provider you pick for a request. API keys never leave your machine except in requests to their own provider.
+Everything runs locally. Prompts and clip data are sent only to the AI provider you pick for a request. API keys never leave your machine except in requests to their own provider. The server listens on `127.0.0.1` only and rejects requests from other websites open in your browser.
 
 ## License
 

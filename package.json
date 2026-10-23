@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Generate Roblox R15 animations with the AI you already pay for: Claude Code, Codex CLI or API keys. Preview, compare models, and send clips straight to Roblox Studio.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xzHannes/openrig-studio.git"
+  },
+  "homepage": "https://github.com/xzHannes/openrig-studio#readme",
+  "bugs": {
+    "url": "https://github.com/xzHannes/openrig-studio/issues"
+  },
   "type": "module",
   "private": true,
   "engines": {

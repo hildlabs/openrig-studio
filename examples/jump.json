@@ -5883,19 +5883,8 @@
     "draft": 1,
     "review": 3
    },
-   "findings": [
-    {
-     "code": "footInGround",
-     "t": 0.1,
-     "depth": 0.3673841097942004
-    }
-   ],
-   "fixes": [
-    {
-     "code": "flowSmoothed",
-     "count": 63
-    }
-   ]
+   "findings": [],
+   "fixes": []
   }
  ]
 }

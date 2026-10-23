@@ -13,10 +13,11 @@ for (const { id } of (await listClips()).filter(c => c.folder === 'Examples')) {
   const clip = await loadClip(id);
   const cur = clip.history.find(h => h.id === clip.current);
   const key = slug(clip.name);
-  // The first request and the latest model answer; the answer now points at the only entry.
+  // The first request and the latest model answer, pointing at the only entry and showing
+  // the findings of the shipped version (a later manual edit may have fixed some).
   const request = clip.chat.find(m => m.role === 'user');
   const reply = clip.chat.findLast(m => m.role === 'assistant');
-  const chat = [request, reply && { ...reply, entry: 1, draftEntry: undefined }].filter(Boolean);
+  const chat = [request, reply && { ...reply, entry: 1, draftEntry: undefined, findings: [...cur.warnings, ...cur.issues], fixes: cur.fixes }].filter(Boolean);
   const example = {
     id: key, name: clip.name, folder: 'Examples', starred: false,
     history: [{ ...cur, id: 1, at: clip.updatedAt }], current: 1, anim: cur.anim, chat,

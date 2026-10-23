@@ -147,9 +147,21 @@ async function serveStatic(res, pathname) {
   return true;
 }
 
+// Only the app itself may use the API, not other websites open in the same browser:
+// a foreign Host header means DNS rebinding, a foreign Origin a cross-site request, and
+// requiring JSON for changes forces a CORS preflight that this server never answers.
+const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+function trusted(req) {
+  if (HOST === '127.0.0.1' && !LOCAL.test(req.headers.host ?? '')) return false;
+  const origin = req.headers.origin;
+  if (origin && origin.replace(/^https?:\/\//, '') !== req.headers.host) return false;
+  return req.method === 'GET' || (req.headers['content-type'] ?? '').startsWith('application/json');
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
+    if (!trusted(req)) return send(res, 403, { error: 'Request blocked: only the OpenRig Studio page itself can use this server.' });
     if (req.method === 'GET' && await serveStatic(res, url.pathname)) return;
     for (const [method, pattern, handler] of routes) {
       const m = url.pathname.match(pattern);

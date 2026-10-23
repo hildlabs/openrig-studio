@@ -10,16 +10,16 @@ const STRINGS = {
     'composer.reviewHint': 'Second pass: the model sees its draft as a contact sheet and fixes what it spots. Takes about twice as long.',
     'composer.improve': 'Improve', 'composer.send': 'Generate',
     'mode.improve': 'Improve', 'job.start': 'Starting…', 'job.draft': '{engine} is writing a draft…', 'job.retry': 'The answer had no animation, asking again…', 'job.review': 'Visual review: {engine} checks the contact sheet…',
-    'msg.plan': 'Plan', 'msg.findings': '{n} findings', 'msg.fixes': 'Automatic fixes', 'msg.reviewed': 'Visual review applied', 'msg.reviewKept': 'Visual review not used: {reason}',
+    'msg.plan': 'Plan', 'msg.findings': '{n} findings', 'msg.findings.one': '1 finding', 'msg.fixes': 'Automatic fixes', 'msg.reviewed': 'Visual review applied', 'msg.reviewKept': 'Visual review not used: {reason}',
     'msg.reviewWorse': 'it had more findings', 'msg.reviewNoJson': 'no readable answer', 'msg.reviewError': 'request failed',
     'msg.restoreDraft': 'Use the draft instead', 'msg.tokens': '{in} in, {out} out', 'msg.thinking': '{n} reasoning',
-    'clip.untitled': 'New animation', 'clip.keys': '{n} keys', 'clip.events': '{n} events', 'clip.loop': 'Loop', 'clip.rename': 'Rename',
+    'clip.untitled': 'New animation', 'clip.keys': '{n} keys', 'clip.keys.one': '1 key', 'clip.events': '{n} events', 'clip.events.one': '1 event', 'clip.loop': 'Loop', 'clip.rename': 'Rename',
     'viewport.hint': 'Click a body part to edit it. Drag to orbit, scroll to zoom.',
     'transport.play': 'Play (Space)', 'transport.pause': 'Pause (Space)', 'transport.start': 'Go to start', 'transport.end': 'Go to end', 'transport.loop': 'Repeat playback',
     'lower.dope': 'Dope sheet', 'lower.frames': 'Frames', 'lower.history': 'History', 'lower.events': 'Events', 'lower.time': 'Time',
     'frames.hint': 'Every frame the model sees during visual review. Click a frame to jump there.',
     'history.created': 'Created', 'history.generated': 'Generated', 'history.draft': 'Draft before visual review', 'history.edited': 'Edited by hand',
-    'history.imported': 'Imported from Studio', 'history.restored': 'Restored', 'history.current': 'Current', 'history.restore': 'Restore', 'history.frames': 'Frames', 'history.findings': '{n} findings',
+    'history.imported': 'Imported from Studio', 'history.restored': 'Restored', 'history.current': 'Current', 'history.restore': 'Restore', 'history.frames': 'Frames', 'history.findings': '{n} findings', 'history.findings.one': '1 finding',
     'insp.joint': 'Joint', 'insp.noJoint': 'Click a body part in the viewport or a row in the dope sheet.', 'insp.atKey': 'Key at {t} s', 'insp.between': 'Between keys, {t} s',
     'insp.addKey': 'Add key here', 'insp.removeKey': 'Remove key', 'insp.easing': 'Easing', 'insp.position': 'Position', 'insp.rotation': 'Rotation',
     'insp.keyframe': 'Keyframe', 'insp.time': 'Time', 'insp.air': 'In the air (both feet off the ground)', 'insp.deleteKeyframe': 'Delete keyframe',
@@ -31,9 +31,9 @@ const STRINGS = {
     'actions.pull': 'Import from Studio', 'actions.pullHint': 'Takes a version edited in the Animation Editor', 'actions.rbxmx': 'Download .rbxmx', 'actions.luau': 'Copy Luau builder',
     'actions.duplicate': 'Duplicate', 'actions.delete': 'Delete',
     'done.push': 'Sent to Studio: {msg}', 'done.preview': 'Played in Studio ({msg})', 'done.playtest': 'Playing on {msg}', 'done.luau': 'Luau copied. Paste it in Studio\'s command bar.', 'done.saved': 'Saved',
-    'done.restored': 'Restored', 'done.imported': 'Imported from Studio', 'done.deleted': '{n} deleted', 'done.moved': 'Moved {n} clips', 'done.renamed': 'Renamed',
+    'done.restored': 'Restored', 'done.imported': 'Imported from Studio', 'done.deleted': '{n} deleted', 'done.moved': 'Moved {n} clips', 'done.moved.one': 'Moved 1 clip', 'done.renamed': 'Renamed',
     'err.selectStudio': 'Choose a Studio window first (top right).', 'err.saveFirst': 'Save or discard your changes first.', 'err.busy': 'This clip is generating. Wait until it finishes.',
-    'pull.title': 'Import from Studio', 'pull.body': 'Animations in ServerStorage › RBX_ANIMSAVES, where the Animation Editor saves. The one you choose becomes the newest version of this clip.', 'pull.none': 'No saved animations found.', 'pull.keys': '{n} keyframes',
+    'pull.title': 'Import from Studio', 'pull.body': 'Animations in ServerStorage › RBX_ANIMSAVES, where the Animation Editor saves. The one you choose becomes the newest version of this clip.', 'pull.none': 'No saved animations found.', 'pull.keys': '{n} keyframes', 'pull.keys.one': '1 keyframe',
     'dialog.cancel': 'Cancel', 'dialog.close': 'Close', 'dialog.delete': 'Delete', 'dialog.confirmDelete': 'Delete {n} clip(s)? They move to data/trash and can be restored from there.',
     'lib.all': 'All clips', 'lib.starred': 'Starred', 'lib.unsorted': 'No folder', 'lib.newFolder': 'New folder', 'lib.folderName': 'Folder name', 'lib.renameFolder': 'Rename folder', 'lib.deleteFolder': 'Remove folder',
     'lib.deleteFolderConfirm': 'Remove the folder "{name}"? Its clips stay in the library without a folder.',
@@ -66,16 +66,16 @@ const STRINGS = {
     'composer.reviewHint': 'Zweiter Durchgang: Das Modell sieht seinen Entwurf als Kontaktbogen und bessert nach. Dauert etwa doppelt so lange.',
     'composer.improve': 'Verbessern', 'composer.send': 'Erzeugen',
     'mode.improve': 'Verbessern', 'job.start': 'Starte…', 'job.draft': '{engine} schreibt einen Entwurf…', 'job.retry': 'Die Antwort enthielt keine Animation, frage nach…', 'job.review': 'Bildkontrolle: {engine} prüft den Kontaktbogen…',
-    'msg.plan': 'Plan', 'msg.findings': '{n} Hinweise', 'msg.fixes': 'Automatische Korrekturen', 'msg.reviewed': 'Bildkontrolle übernommen', 'msg.reviewKept': 'Bildkontrolle nicht übernommen: {reason}',
+    'msg.plan': 'Plan', 'msg.findings': '{n} Hinweise', 'msg.findings.one': '1 Hinweis', 'msg.fixes': 'Automatische Korrekturen', 'msg.reviewed': 'Bildkontrolle übernommen', 'msg.reviewKept': 'Bildkontrolle nicht übernommen: {reason}',
     'msg.reviewWorse': 'mehr Hinweise als der Entwurf', 'msg.reviewNoJson': 'keine lesbare Antwort', 'msg.reviewError': 'Anfrage fehlgeschlagen',
     'msg.restoreDraft': 'Lieber den Entwurf nehmen', 'msg.tokens': '{in} rein, {out} raus', 'msg.thinking': '{n} Denken',
-    'clip.untitled': 'Neue Animation', 'clip.keys': '{n} Keys', 'clip.events': '{n} Events', 'clip.loop': 'Loop', 'clip.rename': 'Umbenennen',
+    'clip.untitled': 'Neue Animation', 'clip.keys': '{n} Keys', 'clip.keys.one': '1 Key', 'clip.events': '{n} Events', 'clip.events.one': '1 Event', 'clip.loop': 'Loop', 'clip.rename': 'Umbenennen',
     'viewport.hint': 'Körperteil anklicken zum Bearbeiten. Ziehen dreht, Mausrad zoomt.',
     'transport.play': 'Abspielen (Leertaste)', 'transport.pause': 'Pause (Leertaste)', 'transport.start': 'Zum Anfang', 'transport.end': 'Zum Ende', 'transport.loop': 'Wiederholen',
     'lower.dope': 'Dopesheet', 'lower.frames': 'Einzelbilder', 'lower.history': 'Verlauf', 'lower.events': 'Events', 'lower.time': 'Zeit',
     'frames.hint': 'Genau diese Bilder sieht das Modell bei der Bildkontrolle. Klick auf ein Bild springt dorthin.',
     'history.created': 'Angelegt', 'history.generated': 'Erzeugt', 'history.draft': 'Entwurf vor der Bildkontrolle', 'history.edited': 'Von Hand bearbeitet',
-    'history.imported': 'Aus Studio übernommen', 'history.restored': 'Wiederhergestellt', 'history.current': 'Aktuell', 'history.restore': 'Wiederherstellen', 'history.frames': 'Einzelbilder', 'history.findings': '{n} Hinweise',
+    'history.imported': 'Aus Studio übernommen', 'history.restored': 'Wiederhergestellt', 'history.current': 'Aktuell', 'history.restore': 'Wiederherstellen', 'history.frames': 'Einzelbilder', 'history.findings': '{n} Hinweise', 'history.findings.one': '1 Hinweis',
     'insp.joint': 'Gelenk', 'insp.noJoint': 'Klick ein Körperteil in der 3D-Ansicht oder eine Zeile im Dopesheet an.', 'insp.atKey': 'Key bei {t} s', 'insp.between': 'Zwischen Keys, {t} s',
     'insp.addKey': 'Key hier setzen', 'insp.removeKey': 'Key entfernen', 'insp.easing': 'Easing', 'insp.position': 'Position', 'insp.rotation': 'Drehung',
     'insp.keyframe': 'Keyframe', 'insp.time': 'Zeit', 'insp.air': 'In der Luft (beide Füße frei)', 'insp.deleteKeyframe': 'Keyframe löschen',
@@ -87,9 +87,9 @@ const STRINGS = {
     'actions.pull': 'Aus Studio übernehmen', 'actions.pullHint': 'Holt eine im Animation Editor bearbeitete Fassung', 'actions.rbxmx': '.rbxmx herunterladen', 'actions.luau': 'Luau-Builder kopieren',
     'actions.duplicate': 'Duplizieren', 'actions.delete': 'Löschen',
     'done.push': 'An Studio gesendet: {msg}', 'done.preview': 'In Studio abgespielt ({msg})', 'done.playtest': 'Läuft auf {msg}', 'done.luau': 'Luau kopiert. In Studios Befehlszeile einfügen.', 'done.saved': 'Gespeichert',
-    'done.restored': 'Wiederhergestellt', 'done.imported': 'Aus Studio übernommen', 'done.deleted': '{n} gelöscht', 'done.moved': '{n} Clips verschoben', 'done.renamed': 'Umbenannt',
+    'done.restored': 'Wiederhergestellt', 'done.imported': 'Aus Studio übernommen', 'done.deleted': '{n} gelöscht', 'done.moved': '{n} Clips verschoben', 'done.moved.one': '1 Clip verschoben', 'done.renamed': 'Umbenannt',
     'err.selectStudio': 'Wähle zuerst oben rechts ein Studio-Fenster.', 'err.saveFirst': 'Erst speichern oder verwerfen.', 'err.busy': 'Dieser Clip wird gerade erzeugt. Warte, bis er fertig ist.',
-    'pull.title': 'Aus Studio übernehmen', 'pull.body': 'Animationen unter ServerStorage › RBX_ANIMSAVES, wo der Animation Editor speichert. Die gewählte wird die neueste Fassung dieses Clips.', 'pull.none': 'Keine gespeicherten Animationen gefunden.', 'pull.keys': '{n} Keyframes',
+    'pull.title': 'Aus Studio übernehmen', 'pull.body': 'Animationen unter ServerStorage › RBX_ANIMSAVES, wo der Animation Editor speichert. Die gewählte wird die neueste Fassung dieses Clips.', 'pull.none': 'Keine gespeicherten Animationen gefunden.', 'pull.keys': '{n} Keyframes', 'pull.keys.one': '1 Keyframe',
     'dialog.cancel': 'Abbrechen', 'dialog.close': 'Schließen', 'dialog.delete': 'Löschen', 'dialog.confirmDelete': '{n} Clip(s) löschen? Sie landen in data/trash und lassen sich von dort wiederherstellen.',
     'lib.all': 'Alle Clips', 'lib.starred': 'Markiert', 'lib.unsorted': 'Ohne Ordner', 'lib.newFolder': 'Neuer Ordner', 'lib.folderName': 'Ordnername', 'lib.renameFolder': 'Ordner umbenennen', 'lib.deleteFolder': 'Ordner entfernen',
     'lib.deleteFolderConfirm': 'Ordner „{name}“ entfernen? Die Clips bleiben ohne Ordner in der Bibliothek.',
@@ -122,8 +122,10 @@ export function setLang(next) {
   try { localStorage.setItem('openrig.lang', lang); } catch { /* storage blocked */ }
   document.documentElement.lang = lang;
 }
+// For n = 1 a "<key>.one" string is used when there is one ("1 finding").
 export function t(key, vars = {}) {
-  const s = STRINGS[lang]?.[key] ?? STRINGS.en[key] ?? key;
+  const one = vars.n === 1 ? STRINGS[lang]?.[`${key}.one`] : null;
+  const s = one ?? STRINGS[lang]?.[key] ?? STRINGS.en[key] ?? key;
   return s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? `{${k}}`));
 }
 export function ago(iso) {

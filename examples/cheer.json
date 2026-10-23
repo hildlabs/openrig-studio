@@ -6014,19 +6014,8 @@
    "review": {
     "applied": true
    },
-   "findings": [
-    {
-     "code": "footInGround",
-     "t": 0.1,
-     "depth": 0.4142933731832802
-    }
-   ],
-   "fixes": [
-    {
-     "code": "flowSmoothed",
-     "count": 78
-    }
-   ]
+   "findings": [],
+   "fixes": []
   }
  ]
 }
