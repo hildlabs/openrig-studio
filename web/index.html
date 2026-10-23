@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenRig Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='5' width='5' height='14' fill='%23e2b112'/%3E%3Crect x='9.5' y='3' width='5' height='18' fill='%232a6fd6'/%3E%3Crect x='16' y='5' width='5' height='14' fill='%233a9447'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>OpenRig Studio</div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-view="editor"></button>
+    <button class="tab" role="tab" data-view="library"></button>
+    <button class="tab" role="tab" data-view="compare"></button>
+    <button class="tab" role="tab" data-view="settings"></button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="studio-pill" id="studioPill">
+    <span class="dot" aria-hidden="true"></span>
+    <select id="studioSelect" aria-label="Roblox Studio"></select>
+    <button class="btn icon quiet" id="studioRefresh"></button>
+  </div>
+  <div class="lang" role="group" aria-label="Language">
+    <button data-lang="en">EN</button><button data-lang="de">DE</button>
+  </div>
+</header>
+<main>
+  <section class="view" id="view-editor"></section>
+  <section class="view hidden" id="view-library"></section>
+  <section class="view hidden" id="view-compare"></section>
+  <section class="view hidden" id="view-settings"></section>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

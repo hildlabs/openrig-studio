@@ -1,0 +1,18 @@
+{
+  "name": "openrig-studio",
+  "version": "0.1.0",
+  "description": "Generate Roblox R15 animations with the AI you already pay for: Claude Code, Codex CLI or API keys. Preview, compare models, and send clips straight to Roblox Studio.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server/main.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.2.0",
+    "openai": "^7.43.0"
+  },
+  "keywords": ["roblox", "animation", "r15", "keyframes", "claude", "codex", "ai"]
+}

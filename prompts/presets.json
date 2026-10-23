@@ -1,0 +1,37 @@
+[
+  {
+    "id": "cheer",
+    "title": { "en": "Cheer", "de": "Jubeln" },
+    "prompt": { "en": "The character cheers because something great just happened.", "de": "Die Figur jubelt, weil gerade etwas Tolles passiert ist." }
+  },
+  {
+    "id": "wave",
+    "title": { "en": "Wave hello", "de": "Winken" },
+    "prompt": { "en": "A friendly wave to say hello.", "de": "Ein freundliches Winken zur Begrüßung." }
+  },
+  {
+    "id": "idle",
+    "title": { "en": "Idle loop", "de": "Idle-Loop" },
+    "prompt": { "en": "A relaxed idle that loops seamlessly.", "de": "Ein entspanntes Idle, das nahtlos loopt." }
+  },
+  {
+    "id": "jump",
+    "title": { "en": "Jump and land", "de": "Sprung mit Landung" },
+    "prompt": { "en": "A playful jump with a soft landing.", "de": "Ein verspielter Sprung mit weicher Landung." }
+  },
+  {
+    "id": "launch",
+    "title": { "en": "Launch into space", "de": "Start ins All" },
+    "prompt": { "en": "The character is launched from a launch pad into space and goes into a flying pose.", "de": "Die Figur wird von einer Startplattform ins All katapultiert und geht in eine Flugpose über." }
+  },
+  {
+    "id": "flight",
+    "title": { "en": "Flying loop", "de": "Flug-Loop" },
+    "prompt": { "en": "Flying through space in a flying pose, as a seamless loop.", "de": "Flug durchs All in einer Flugpose, als nahtloser Loop." }
+  },
+  {
+    "id": "landing",
+    "title": { "en": "Land from flight", "de": "Landung aus dem Flug" },
+    "prompt": { "en": "The character lands on the ground from a flying pose.", "de": "Die Figur landet aus einer Flugpose auf dem Boden." }
+  }
+]
