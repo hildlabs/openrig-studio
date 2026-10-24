@@ -16,10 +16,12 @@ const HOST = process.env.HOST || '127.0.0.1';
 const WEB = path.join(ROOT, 'web');
 const CORE = path.join(ROOT, 'src', 'core');
 const BROWSER_CORE = ['rig.js', 'anim.js', 'ik.js', 'messages.js'];
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json; charset=utf-8' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json; charset=utf-8', '.woff2': 'font/woff2' };
+// No framing by other pages (clickjacking), no MIME sniffing, no referrer to the CDN.
+const SECURITY_HEADERS = { 'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 
 function send(res, status, body, type = 'application/json; charset=utf-8', headers = {}) {
-  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...headers });
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...SECURITY_HEADERS, ...headers });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 async function readBody(req) {
@@ -45,8 +47,8 @@ const routes = [
   ['GET', /^\/api\/providers$/, async () => listProviders()],
   ['GET', /^\/api\/presets$/, async () => JSON.parse(await readFile(path.join(ROOT, 'prompts', 'presets.json'), 'utf8'))],
   ['GET', /^\/api\/settings$/, async () => settingsView()],
-  ['PUT', /^\/api\/settings$/, async (req) => { await saveSettings(await readBody(req)); return settingsView(); }],
-  ['POST', /^\/api\/settings\/test$/, async (req) => ({ message: await testProvider((await readBody(req)).provider) })],
+  ['PUT', /^\/api\/settings$/, async (req) => { localOnly(req); await saveSettings(await readBody(req)); return settingsView(); }],
+  ['POST', /^\/api\/settings\/test$/, async (req) => { localOnly(req); return { message: await testProvider((await readBody(req)).provider) }; }],
 
   ['GET', /^\/api\/clips$/, async () => ({ clips: await lib.listClips(), folders: await lib.listFolders() })],
   ['POST', /^\/api\/clips$/, async (req) => {
@@ -141,6 +143,7 @@ async function serveStatic(res, pathname) {
   let file = null;
   if (pathname === '/') file = path.join(WEB, 'index.html');
   else if (pathname.startsWith('/core/') && BROWSER_CORE.includes(path.basename(pathname))) file = path.join(CORE, path.basename(pathname));
+  else if (/^\/fonts\/[\w.-]+\.woff2$/.test(pathname)) file = path.join(WEB, 'fonts', path.basename(pathname));
   else if (/^\/[\w.-]+$/.test(pathname)) file = path.join(WEB, pathname.slice(1));
   if (!file || !existsSync(file)) return false;
   send(res, 200, await readFile(file), MIME[path.extname(file)] ?? 'application/octet-stream');
@@ -151,11 +154,17 @@ async function serveStatic(res, pathname) {
 // a foreign Host header means DNS rebinding, a foreign Origin a cross-site request, and
 // requiring JSON for changes forces a CORS preflight that this server never answers.
 const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+const LOOPBACK = ['127.0.0.1', 'localhost', '::1'].includes(HOST);
 function trusted(req) {
-  if (HOST === '127.0.0.1' && !LOCAL.test(req.headers.host ?? '')) return false;
+  if (LOOPBACK && !LOCAL.test(req.headers.host ?? '')) return false;
   const origin = req.headers.origin;
   if (origin && origin.replace(/^https?:\/\//, '') !== req.headers.host) return false;
   return req.method === 'GET' || (req.headers['content-type'] ?? '').startsWith('application/json');
+}
+// Settings choose which programs the server starts, so even with HOST=0.0.0.0 only this
+// computer may change or test them, never another device on the network.
+function localOnly(req) {
+  if (!/^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? '')) throw Object.assign(new Error('Settings can only be changed on the computer running OpenRig Studio.'), { status: 403 });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -185,6 +194,7 @@ server.on('error', e => {
 });
 server.listen(PORT, HOST, async () => {
   console.log(`OpenRig Studio is running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  if (!LOOPBACK) console.warn(`  WARNING: HOST=${HOST} makes OpenRig Studio reachable from other devices, without a password.\n  Anyone on your network can use your AI subscriptions and library. Unset HOST to keep it local.`);
   const examples = await lib.seedExamples().catch(e => { console.error(`Could not add the example clips: ${e.message}`); return 0; });
   if (examples) console.log(`  Added ${examples} example clips to the library (folder "Examples").`);
   const providers = await listProviders();

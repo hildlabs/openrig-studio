@@ -4,7 +4,7 @@ import path from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { ROOT, DATA } from './settings.js';
-import { prepare, restClip } from '../core/anim.js';
+import { prepare, restClip, cleanName } from '../core/anim.js';
 
 const CLIPS = path.join(DATA, 'clips');
 const TRASH = path.join(DATA, 'trash');
@@ -43,6 +43,7 @@ export function addEntry(clip, result, kind, label = '') {
 }
 
 export async function createClip(name = 'New animation', folder = '') {
+  name = cleanName(name).slice(0, 80) || 'New animation';
   let id = slug(name), n = 2;
   while (existsSync(clipPath(id))) id = `${slug(name)}-${n++}`;
   const clip = { id, name, folder, starred: false, createdAt: now(), history: [], chat: [] };
@@ -69,7 +70,7 @@ export async function listClips() {
 
 export async function updateClip(id, { name, folder, starred }) {
   const clip = await loadClip(id);
-  if (typeof name === 'string' && name.trim()) { clip.name = name.trim().slice(0, 80); clip.anim.name = clip.name; clip.untitled = false; }
+  if (typeof name === 'string' && cleanName(name)) { clip.name = cleanName(name).slice(0, 80); clip.anim.name = clip.name; clip.untitled = false; }
   if (typeof folder === 'string') { clip.folder = folder.trim().slice(0, 40); if (clip.folder) await addFolder(clip.folder); }
   if (typeof starred === 'boolean') clip.starred = starred;
   return saveClip(clip);

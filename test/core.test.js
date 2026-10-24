@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { solve, anglesDeg, eulerDeg, cf, lowestY } from '../src/core/rig.js';
-import { prepare, normalize, sample, easeAlpha, toRbxmx, toLuauBuilder, exportTree, fromStudio, forModel } from '../src/core/anim.js';
+import { prepare, normalize, sample, easeAlpha, toRbxmx, toLuauBuilder, exportTree, fromStudio, forModel, luaStr } from '../src/core/anim.js';
 import { formatIssue } from '../src/core/messages.js';
 import { renderSheet, renderStrip } from '../src/core/render.js';
 
@@ -129,6 +129,26 @@ test('motion flow only touches model output and keeps turning points', () => {
   assert.deepEqual(prepare({ keyframes: rise }).anim.keyframes.map(k => k.poses.LowerTorso.ease).slice(0, 3), ['InOut', 'InOut', 'InOut']);
   const bounce = prepare({ keyframes: [0, 1, 0].map((y, i) => ({ t: i * 0.3, contact: 'air', poses: { LowerTorso: { pos: [0, y + 1, 0] } } })) }, { literal: true }).anim;
   assert.deepEqual(bounce.keyframes.slice(0, 2).map(k => k.poses.LowerTorso.ease), ['InOut', 'InOut']);
+});
+
+test('exports cannot be broken out of by names or stored values', () => {
+  const n = normalize({ name: 'Wave\rprint(1)', priority: 'constructor', keyframes: [] }).anim;
+  assert.equal(n.name, 'Wave print(1)');
+  assert.equal(n.priority, 'Action');
+  // A stored clip is not re-normalized before export, so the exports check it themselves.
+  const raw = { ...n, name: 'Wave\rprint("pwned") --', loop: 'true; print("pwned")', priority: 'Idle\nprint("pwned")', events: [{ t: 0, name: 'a"\n', value: '\\"]] print("pwned")' }] };
+  const lua = toLuauBuilder(raw);
+  const lines = lua.split(/\r\n|\r|\n/);
+  assert.match(lines[0], /^-- OpenRig Studio: "Wave print\(\\034pwned\\034\) --"$/);
+  assert.ok(!lines.some(l => /^\s*print/.test(l)), 'no injected statement');
+  assert.match(lua, /seq\.Loop = false\nseq\.Priority = Enum\.AnimationPriority\.Action\n/);
+  const rbxmx = toRbxmx(raw);
+  assert.match(rbxmx, /<bool name="Loop">false<\/bool><token name="Priority">2<\/token>/);
+  // Luau literal round trip: \ddd are UTF-8 bytes.
+  const text = 'Jubel ü "x" \\ \n' + String.fromCharCode(0x2028) + ' 😀';
+  const bytes = luaStr(text).slice(1, -1).replace(/\\(\d{3})|(.)/gs, (_, d, c) => String.fromCharCode(d ? Number(d) : c.charCodeAt(0)));
+  assert.equal(new TextDecoder().decode(Uint8Array.from(bytes, c => c.charCodeAt(0))), text);
+  assert.match(luaStr(text), /^"[ -~]*"$/, 'printable ASCII only');
 });
 
 test('export and Studio round trip', () => {

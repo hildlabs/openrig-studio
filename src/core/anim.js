@@ -11,6 +11,10 @@ import { IK_CHAINS, solveChain } from './ik.js';
 export const EASES = ['InOut', 'Out', 'In', 'Linear', 'Constant'];
 export const PRIORITIES = { Idle: 0, Movement: 1, Action: 2, Action2: 3, Action3: 4, Action4: 5, Core: 1000 };
 export const FEET = ['LeftFoot', 'RightFoot'];
+// Stored clips are plain JSON and may come from elsewhere, so exports re-check these too.
+export const priorityOf = p => (typeof p === 'string' && Object.hasOwn(PRIORITIES, p) ? p : 'Action');
+// Names end up in Luau, XML and the UI: no control or line-break characters.
+export const cleanName = s => String(s ?? '').replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ').trim();
 const round = (v, n = 3) => Math.round(v * 10 ** n) / 10 ** n;
 const vec3 = v => (Array.isArray(v) ? [0, 1, 2].map(i => (Number.isFinite(Number(v[i])) ? Number(v[i]) : 0)) : [0, 0, 0]);
 const isZero = v => v.every(x => Math.abs(x) < 1e-9);
@@ -66,9 +70,9 @@ export function normalize(input, { literal = false } = {}, rig = RIG_R15) {
     .map(e => ({ t: round(Math.min(end, Math.max(0, Number(e?.t) || 0))), name: String(e?.name ?? 'Event').replace(/[^\w]/g, '').slice(0, 40) || 'Event', value: String(e?.value ?? '').slice(0, 100) }))
     .sort((a, b) => a.t - b.t);
   const anim = {
-    name: String(src.name ?? 'Animation').slice(0, 80),
+    name: cleanName(src.name ?? 'Animation').slice(0, 80) || 'Animation',
     loop: Boolean(src.loop),
-    priority: PRIORITIES[src.priority] !== undefined ? src.priority : 'Action',
+    priority: priorityOf(src.priority),
     keyframes, events,
   };
   return { anim, warnings };
@@ -418,7 +422,7 @@ export function toRbxmx(anims) {
   const marker = m => `<Item class="KeyframeMarker" referent="RBX${ref++}"><Properties><string name="Name">${xml(m.name)}</string><string name="Value">${xml(m.value)}</string></Properties></Item>`;
   for (const anim of list) {
     const events = [...anim.events];
-    lines.push(`<Item class="KeyframeSequence" referent="RBX${ref++}"><Properties><string name="Name">${xml(anim.name)}</string><bool name="Loop">${anim.loop}</bool><token name="Priority">${PRIORITIES[anim.priority]}</token></Properties>`);
+    lines.push(`<Item class="KeyframeSequence" referent="RBX${ref++}"><Properties><string name="Name">${xml(cleanName(anim.name))}</string><bool name="Loop">${anim.loop === true}</bool><token name="Priority">${PRIORITIES[priorityOf(anim.priority)]}</token></Properties>`);
     for (const kf of exportTree(anim)) {
       lines.push(` <Item class="Keyframe" referent="RBX${ref++}"><Properties><string name="Name">Keyframe</string><float name="Time">${num(kf.t)}</float></Properties>`);
       if (kf.root) pose(kf.root, '  ');
@@ -433,20 +437,24 @@ export function toRbxmx(anims) {
   return lines.join('\n');
 }
 
-const luaStr = s => JSON.stringify(String(s));
+// Luau string literal: printable ASCII as is, every other byte (UTF-8) as a \ddd escape, so no
+// input can end the string, start a new line or hit an escape Luau doesn't know (JSON's \uXXXX).
+export const luaStr = s => `"${[...new TextEncoder().encode(String(s))]
+  .map(b => (b >= 0x20 && b < 0x7f && b !== 0x22 && b !== 0x5c ? String.fromCharCode(b) : `\\${String(b).padStart(3, '0')}`)).join('')}"`;
 // Luau chunk that returns a fresh KeyframeSequence (Command Bar, MCP execute_luau).
 export function toLuauBuilder(anim) {
   const kfs = exportTree(anim).map(kf => {
     const poseLua = n => `{${luaStr(n.part)},${n.weight},{${[...n.cframe.p, ...n.cframe.R].map(num).join(',')}},${luaStr(n.style)},${luaStr(n.dir)},{${n.children.map(poseLua).join(',')}}}`;
     return `{${num(kf.t)},${kf.root ? poseLua(kf.root) : 'nil'}}`;
   });
-  return `-- OpenRig Studio: ${anim.name.replace(/\n/g, ' ')}
+  const name = cleanName(anim.name);
+  return `-- OpenRig Studio: ${luaStr(name)}
 local DATA = {${kfs.join(',\n')}}
 local EVENTS = {${anim.events.map(e => `{${num(e.t)},${luaStr(e.name)},${luaStr(e.value)}}`).join(',')}}
 local seq = Instance.new("KeyframeSequence")
-seq.Name = ${luaStr(anim.name)}
-seq.Loop = ${anim.loop}
-seq.Priority = Enum.AnimationPriority.${anim.priority}
+seq.Name = ${luaStr(name)}
+seq.Loop = ${anim.loop === true}
+seq.Priority = Enum.AnimationPriority.${priorityOf(anim.priority)}
 local function pose(spec, parent)
 	local p = Instance.new("Pose")
 	p.Name = spec[1]

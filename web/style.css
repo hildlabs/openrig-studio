@@ -1,5 +1,11 @@
 /* OpenRig Studio. Functional colours come from the classic R15 character:
    arms/head yellow, torso blue, legs green. Everything else stays quiet. */
+/* IBM Plex (latin subset), shipped locally: SIL Open Font License, see fonts/OFL.txt. */
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 100 700; font-display: swap; src: url(/fonts/plex-sans-var.woff2) format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans Condensed'; font-weight: 400; font-display: swap; src: url(/fonts/plex-sans-condensed-400.woff2) format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans Condensed'; font-weight: 500; font-display: swap; src: url(/fonts/plex-sans-condensed-500.woff2) format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans Condensed'; font-weight: 600; font-display: swap; src: url(/fonts/plex-sans-condensed-600.woff2) format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 400; font-display: swap; src: url(/fonts/plex-mono-400.woff2) format('woff2'); }
 :root {
   --paper: #e9ecf0;
   --panel: #f6f7f9;

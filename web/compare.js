@@ -77,7 +77,7 @@ function renderSetup() {
     const on = prev ? prev.on : DEFAULT_RUNS.includes(key);
     const effort = prev?.effort ?? (m.efforts.includes('high') ? 'high' : '');
     return `<div class="row${p.available ? '' : ' off'}"><label class="check"><input type="checkbox" data-key="${esc(key)}" ${on && p.available ? 'checked' : ''} ${p.available ? '' : 'disabled'}>${esc(m.label)}</label>
-      <select data-effort="${esc(key)}" ${p.available ? '' : 'disabled'}><option value="">${t('engine.default')}</option>${m.efforts.map(e => `<option${e === effort ? ' selected' : ''}>${e}</option>`).join('')}</select></div>`;
+      <select data-effort="${esc(key)}" ${p.available ? '' : 'disabled'}><option value="">${t('engine.default')}</option>${m.efforts.map(e => `<option${e === effort ? ' selected' : ''}>${esc(e)}</option>`).join('')}</select></div>`;
   }).join('')).join('');
 }
 function saveRuns() {

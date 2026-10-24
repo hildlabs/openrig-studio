@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { loadSettings } from './settings.js';
 import { firstExisting, newestIn } from './process.js';
-import { toLuauBuilder } from '../core/anim.js';
+import { toLuauBuilder, luaStr } from '../core/anim.js';
 
 export const RIG_NAME = 'OpenRigPreview';
 
@@ -174,7 +174,7 @@ a.Name = "OpenRigPreview"
 a.AnimationId = game:GetService("KeyframeSequenceProvider"):RegisterKeyframeSequence(${seqFn(anim)}())
 local track = animator:LoadAnimation(a)
 track.Priority = Enum.AnimationPriority.Action4
-track.Looped = ${anim.loop}
+track.Looped = ${anim.loop === true}
 track:Play(0.1)
 return player.Name`;
 }
@@ -188,7 +188,7 @@ if saves then
 	end
 end
 return game:GetService("HttpService"):JSONEncode(out)`;
-const pullLuau = fullName => `local target = ${JSON.stringify(fullName)}
+const pullLuau = fullName => `local target = ${luaStr(fullName)}
 local seq
 for _, d in game:GetService("ServerStorage"):GetDescendants() do
 	if d:IsA("KeyframeSequence") and d:GetFullName() == target then seq = d break end
