@@ -164,7 +164,7 @@ function fillEfforts() {
   $('#engCustom', root).classList.toggle('hidden', modelId !== CUSTOM);
   const efforts = model?.efforts ?? prov?.models[0]?.efforts ?? ['low', 'medium', 'high'];
   const want = prefs.get(`effort.${prov?.id}`, 'high');
-  $('#engEffort', root).innerHTML = `<option value="">${t('engine.default')}</option>` + efforts.map(e => `<option value="${e}">${e}</option>`).join('');
+  $('#engEffort', root).innerHTML = `<option value="">${t('engine.default')}</option>` + efforts.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
   $('#engEffort', root).value = efforts.includes(want) ? want : '';
 }
 function engine() {
