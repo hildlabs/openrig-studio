@@ -57,11 +57,7 @@ export function normalize(input, { literal = false } = {}, rig = RIG_R15) {
   let keyframes = [...byTime.values()].sort((a, b) => a.t - b.t);
   if (!keyframes.length || keyframes[0].t > 0) keyframes.unshift({ t: 0, poses: {} });
   if (keyframes.length < 2) { keyframes.push({ t: 1, poses: {} }); warnings.push({ code: 'noLength' }); }
-  // Every track starts at t=0 so preview and Roblox agree; a joint first keyed later starts at rest.
-  for (const part of POSE_PARTS) {
-    const first = keyframes.find(k => k.poses[part]);
-    if (first && first !== keyframes[0]) keyframes[0].poses[part] = { rot: [0, 0, 0], pos: [0, 0, 0], ease: 'InOut' };
-  }
+  startAtRest(keyframes);
   if (!literal) unwrapTracks(keyframes);
   keyframes = expandSpins(keyframes);
   clampRotations(keyframes, rig, warnings);
@@ -76,6 +72,15 @@ export function normalize(input, { literal = false } = {}, rig = RIG_R15) {
     keyframes, events,
   };
   return { anim, warnings };
+}
+
+// Every track starts at t=0 so preview and Roblox agree; a joint first keyed later starts at
+// rest. Runs again after IK, which keys arm and leg joints the model did not key itself.
+function startAtRest(keyframes) {
+  for (const part of POSE_PARTS) {
+    const first = keyframes.find(k => k.poses[part]);
+    if (first && first !== keyframes[0]) keyframes[0].poses[part] = { rot: [0, 0, 0], pos: [0, 0, 0], ease: 'InOut' };
+  }
 }
 
 function unwrapTracks(keyframes) {
@@ -202,6 +207,48 @@ export function groundFeet(anim, rig = RIG_R15) {
     if (Math.abs(delta) > 0.15) notes.push({ code: 'bodyLowered', t: kf.t, delta });
   }
   return notes;
+}
+
+// Grounding only sees keyframes; between them the legs can still push through the floor, most
+// at take-offs where the legs stretch before the body has risen. Where a foot sinks deeper than
+// SINK_TOL, the body gets a key at the deepest frame of that body segment, lifted so the foot
+// touches the ground. The segment's easing is split so the motion keeps flowing through it.
+const SINK_TOL = 0.05, SINK_FPS = 60;
+const SPLIT_EASE = { InOut: ['In', 'Out'], In: ['In', 'Linear'], Out: ['Linear', 'Out'], Linear: ['Linear', 'Linear'] };
+const bodyPose = (s, ease) => ({ rot: eulerDeg(s.R).map(v => round(v, 2)), pos: s.p.map(v => round(v, 3)), ease });
+function groundBetween(anim, rig = RIG_R15) {
+  const end = duration(anim);
+  let count = 0;
+  for (let pass = 0; pass < 6; pass++) {
+    const tracks = buildTracks(anim);
+    const bodyKeys = anim.keyframes.filter(k => k.poses.LowerTorso);
+    const worst = new Map();
+    for (let i = 1; i < Math.round(end * SINK_FPS); i++) {
+      const t = round(i / SINK_FPS);
+      const depth = -lowestY(solve(sampleTracks(tracks, t), rig), FEET, rig);
+      if (depth <= SINK_TOL || bodyKeys.some(k => k.t === t)) continue;
+      const before = bodyKeys.findLast(k => k.t < t);
+      if (before && !SPLIT_EASE[before.poses.LowerTorso.ease]) continue; // Constant: a deliberate hold
+      if (!(worst.get(before)?.depth >= depth)) worst.set(before, { t, depth });
+    }
+    if (!worst.size) break;
+    for (const [before, { t, depth }] of worst) {
+      const s = sampleTracks(tracks, t).LowerTorso ?? IDENTITY;
+      // A body that was never keyed, or not after this point, first gets keys that keep its path.
+      if (!before) anim.keyframes[0].poses.LowerTorso = bodyPose(sampleTracks(tracks, 0).LowerTorso ?? IDENTITY, 'InOut');
+      if (!bodyKeys.some(k => k.t > t)) anim.keyframes.at(-1).poses.LowerTorso = bodyPose(sampleTracks(tracks, end).LowerTorso ?? IDENTITY, 'InOut');
+      const from = (before ?? anim.keyframes[0]).poses.LowerTorso;
+      const [first, second] = SPLIT_EASE[from.ease];
+      from.ease = first;
+      const kf = anim.keyframes.find(k => k.t === t) ?? { t, poses: {} };
+      if (!anim.keyframes.includes(kf)) anim.keyframes.push(kf);
+      kf.poses.LowerTorso = bodyPose(s, second);
+      kf.poses.LowerTorso.pos[1] = round(kf.poses.LowerTorso.pos[1] + depth);
+      count++;
+    }
+    anim.keyframes.sort((x, y) => x.t - y.t);
+  }
+  return count;
 }
 
 // Foot lock: a foot that keeps the same target in two consecutive keyframes gets in-between
@@ -374,6 +421,7 @@ export function prepare(input, { ground = true, literal = false } = {}) {
   const hasIK = anim.keyframes.some(k => k.ik);
   if (hasIK) lockFeet(anim);
   let ikNotes = hasIK ? applyIK(anim) : [];
+  if (hasIK) startAtRest(anim.keyframes);
   let fixes = ground ? groundFeet(anim) : [];
   if (hasIK) {
     ikNotes = applyIK(anim);
@@ -386,6 +434,8 @@ export function prepare(input, { ground = true, literal = false } = {}) {
     refineLocks(anim);
     stripIK(anim);
   }
+  const lifted = ground ? groundBetween(anim) : 0;
+  if (lifted) fixes = [...fixes, { code: 'liftedBetween', count: lifted }];
   return { anim, warnings: [...warnings, ...ikNotes], fixes, issues: inspect(anim) };
 }
 

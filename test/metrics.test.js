@@ -54,6 +54,24 @@ test('planted feet stay put when the body accelerates or its easing is changed b
   }
 });
 
+test('feet do not go through the ground between a squat and an airborne key', () => {
+  // Straight from the squat into the air: the legs stretch while the body still rises slowly.
+  const feet = { LeftFoot: [-0.5, 0, 0], RightFoot: [0.5, 0, 0] };
+  const straight = { rot: [0, 0, 0] };
+  const r = prepare({ keyframes: [
+    { t: 0, ik: feet, poses: { LowerTorso: { pos: [0, 0, 0] } } },
+    { t: 0.18, ik: feet, poses: { LowerTorso: { rot: [-12, 0, 0], pos: [0, -0.8, 0.15], ease: 'In' } } },
+    { t: 0.4, contact: 'air', poses: { LowerTorso: { pos: [0, 1.25, 0] }, LeftUpperLeg: straight, RightUpperLeg: straight, LeftLowerLeg: straight, RightLowerLeg: straight } },
+    { t: 1, ik: feet, poses: { LowerTorso: { pos: [0, 0, 0] } } },
+  ] }, { literal: true });
+  assert.deepEqual(r.issues, []);
+  assert.ok(motionStats(r.anim).footSink < 0.06);
+  assert.ok(r.fixes.some(f => f.code === 'liftedBetween'));
+  // The added body keys keep the motion flowing instead of stopping at each of them.
+  const body = r.anim.keyframes.filter(k => k.poses.LowerTorso && k.t > 0.18 && k.t < 0.4);
+  assert.ok(body.length > 0 && body.every(k => k.poses.LowerTorso.ease !== 'InOut'));
+});
+
 test('examples: the jump is in the air, the idle stays on the ground, the wave uses the whole body', () => {
   const jump = motionStats(example('jump')), idle = motionStats(example('idle')), wave = motionStats(example('wave'));
   assert.ok(jump.airTime > 0.3);

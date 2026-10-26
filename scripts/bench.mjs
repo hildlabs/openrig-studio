@@ -189,7 +189,10 @@ function printCompare(a, b) {
   console.log(`\nA: ${a.meta.id} (${a.meta.engines.map(e => e.label).join(', ')}, prompt ${a.meta.prompt.sha})`);
   console.log(`B: ${b.meta.id} (${b.meta.engines.map(e => e.label).join(', ')}, prompt ${b.meta.prompt.sha})\n`);
   console.log(table(['Case', 'Score A', 'Score B', 'Δ Score', 'Δ Slide'], rows));
-  console.log(`\nFailed: A ${failed(a)}, B ${failed(b)}. Negative Δ = B is better.${keys.length < 3 || a.meta.runs * b.meta.runs < 4 ? ' Few samples: models vary from run to run, use --runs 2 or more before trusting small differences.' : ''}`);
+  // A replay uses the same model answers, so its differences come from the pipeline alone.
+  const replay = a.meta.replayOf === b.meta.id || b.meta.replayOf === a.meta.id || (a.meta.replayOf && a.meta.replayOf === b.meta.replayOf);
+  const few = !replay && (keys.length < 3 || a.meta.runs * b.meta.runs < 4);
+  console.log(`\nFailed: A ${failed(a)}, B ${failed(b)}. Negative Δ = B is better.${replay ? ' Same model answers: the differences come from the pipeline alone.' : ''}${few ? ' Few samples: models vary from run to run, use --runs 2 or more before trusting small differences.' : ''}`);
 }
 
 // ---------- Report ----------
