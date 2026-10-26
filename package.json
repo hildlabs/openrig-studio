@@ -19,6 +19,7 @@
   "scripts": {
     "start": "node src/server/main.js",
     "test": "node --test",
+    "bench": "node scripts/bench.mjs",
     "save-examples": "node scripts/save-examples.mjs"
   },
   "dependencies": {

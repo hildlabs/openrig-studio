@@ -1,0 +1,22 @@
+[
+  { "id": "idle", "prompt": "A relaxed idle that loops seamlessly.", "loop": true, "duration": [1, 5] },
+  { "id": "walk", "prompt": "A friendly, relaxed walk cycle in place that loops seamlessly.", "loop": true, "cycle": true, "duration": [0.6, 2] },
+  { "id": "run", "prompt": "An energetic run cycle in place that loops seamlessly.", "loop": true, "cycle": true, "duration": [0.4, 1.5] },
+  { "id": "sneak", "prompt": "Sneaking in place, crouched low and careful, as a seamless loop.", "loop": true, "cycle": true, "duration": [0.8, 3] },
+  { "id": "dance", "prompt": "A short, fun dance move that loops seamlessly.", "loop": true, "duration": [1, 4] },
+  { "id": "wave", "prompt": "A friendly wave to say hello.", "duration": [1, 3.5] },
+  { "id": "cheer", "prompt": "The character cheers because something great just happened.", "duration": [1.2, 4] },
+  { "id": "clap", "prompt": "Enthusiastic applause: the character claps several times.", "duration": [1, 3.5] },
+  { "id": "point", "prompt": "Points forward at something in the distance, as if saying \"over there!\"", "duration": [0.8, 3] },
+  { "id": "shrug", "prompt": "A shrug that says \"I don't know\".", "duration": [0.8, 2.5] },
+  { "id": "bow", "prompt": "A polite, respectful bow.", "duration": [1, 3.5] },
+  { "id": "sit", "prompt": "Sits down on the ground and stays seated.", "duration": [1, 3.5] },
+  { "id": "pickup", "prompt": "Bends down, picks something up from the ground and looks at it.", "duration": [1.2, 4] },
+  { "id": "punch", "prompt": "A quick one-two punch combo from a fighting stance.", "duration": [0.6, 2] },
+  { "id": "kick", "prompt": "A strong front kick, then back into the stance.", "duration": [0.6, 2] },
+  { "id": "throw", "prompt": "Winds up and throws a ball overhand.", "duration": [0.8, 2.5] },
+  { "id": "jump", "prompt": "A playful jump with a soft landing.", "air": true, "duration": [0.8, 2.5] },
+  { "id": "spin", "prompt": "A happy 360° spin in place.", "duration": [0.6, 2.5] },
+  { "id": "backflip", "prompt": "A backflip from standing, landing on both feet.", "air": true, "duration": [0.8, 2.5] },
+  { "id": "stumble", "prompt": "Trips, stumbles forward and catches their balance.", "duration": [0.8, 3] }
+]

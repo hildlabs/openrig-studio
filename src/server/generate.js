@@ -12,9 +12,10 @@ import { renderSheet } from '../core/render.js';
 
 const BASE_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system.md'), 'utf8');
 const LANG_NAME = { en: 'English', de: 'German' };
-async function systemPrompt(lang) {
-  const { style } = await loadSettings();
-  let text = BASE_PROMPT;
+// The benchmark passes its own base prompt and leaves out the project style.
+export async function systemPrompt(lang, { base = BASE_PROMPT, withStyle = true } = {}) {
+  const style = withStyle ? (await loadSettings()).style : '';
+  let text = base;
   if (style) text += `\n\n## Project style\n\n${style}\n`;
   text += `\n\nWrite \`plan\` and \`notes\` in ${LANG_NAME[lang] ?? 'English'}.\n`;
   return text;
@@ -72,33 +73,29 @@ const jobs = new Map();
 const busy = new Set();
 export const getJob = id => jobs.get(id);
 
-async function generate(job, { id, prompt, engine, mode: requested, lang = 'en', fixedName }) {
-  const clip = await loadClip(id);
-  const mode = requested === 'improve' ? 'improve' : isRest(clip.anim) ? 'create' : 'edit';
-  const wish = mode === 'improve' ? (prompt?.trim() ? `${IMPROVE}\nAlso: ${prompt.trim()}` : IMPROVE) : prompt.trim();
-  const label = engineLabel(await listProviders(), engine);
-  const system = await systemPrompt(lang);
-  const started = Date.now();
+// Draft → checks → optional visual review, without touching the library. clip only provides
+// the current animation and earlier requests ({ chat: [] } for a new one).
+export async function runPipeline({ clip, wish, mode, engine, system, review: withReview = true, onStep = () => {} }) {
   let usage = null;
   const ask = async (text, images) => { const a = await callModel({ ...engine, system, text, images }); usage = addUsage(usage, a.usage); return a.text; };
 
-  job.step = 'draft';
+  onStep('draft');
   const request = buildRequest(clip, wish, mode);
   let json = extractJson(await ask(request));
   if (!json) {
-    job.step = 'retry';
+    onStep('retry');
     json = extractJson(await ask(request + '\n\nIMPORTANT: your last answer contained no valid JSON. Answer only with the ```json block.'));
   }
   if (!json) throw new Error('The model returned no readable animation.');
   const draft = prepare(json, { literal: true });
   const draftUsage = usage;
   let result = draft, notes = json.notes ?? '', plan = json.plan;
-  let review = null;
-  if (job.review) {
-    job.step = 'review';
+  let review = null, better = null;
+  if (withReview) {
+    onStep('review');
     try {
       const sheet = renderSheet(draft.anim);
-      const better = extractJson(await ask(buildReview(clip, wish, draft, sheet.times), [{ name: 'contact-sheet.png', data: sheet.png }]));
+      better = extractJson(await ask(buildReview(clip, wish, draft, sheet.times), [{ name: 'contact-sheet.png', data: sheet.png }]));
       if (!better) review = { applied: false, reason: 'noJson' };
       else {
         const r2 = prepare(better, { literal: true });
@@ -108,6 +105,21 @@ async function generate(job, { id, prompt, engine, mode: requested, lang = 'en',
       }
     } catch (e) { review = { applied: false, reason: 'error', error: e.message }; }
   }
+  // The model's own answers, so the benchmark can replay them through a changed pipeline.
+  const raw = { draft: json, review: better, final: review?.applied ? better : json };
+  return { draft, result, notes, plan, review, usage, draftUsage, raw };
+}
+
+async function generate(job, { id, prompt, engine, mode: requested, lang = 'en', fixedName }) {
+  const clip = await loadClip(id);
+  const mode = requested === 'improve' ? 'improve' : isRest(clip.anim) ? 'create' : 'edit';
+  const wish = mode === 'improve' ? (prompt?.trim() ? `${IMPROVE}\nAlso: ${prompt.trim()}` : IMPROVE) : prompt.trim();
+  const label = engineLabel(await listProviders(), engine);
+  const system = await systemPrompt(lang);
+  const started = Date.now();
+  const { draft, result, notes, plan, review, usage, draftUsage } = await runPipeline({
+    clip, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; },
+  });
   if (fixedName) { result.anim.name = fixedName; draft.anim.name = fixedName; }
   const draftEntry = review?.applied ? addEntry(clip, draft, 'draft', label) : undefined;
   const entry = addEntry(clip, result, 'generated', label);
