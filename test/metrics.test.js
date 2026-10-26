@@ -29,6 +29,31 @@ test('the same move with planted foot targets barely slides', () => {
   assert.ok(motionStats(anim).footSlide < 0.3);
 });
 
+test('planted feet stay put when the body accelerates or its easing is changed by motion flow', () => {
+  const ik = { LeftFoot: [-0.5, 0, 0], RightFoot: [0.5, 0, 0] };
+  // Fast push-off out of a squat: the body eases In while the legs blend linearly.
+  const jump = prepare({ keyframes: [
+    { t: 0, ik, poses: { LowerTorso: { pos: [0, 0, 0] } } },
+    { t: 0.2, ik, poses: { LowerTorso: { rot: [-15, 0, 0], pos: [0, -0.9, 0.2], ease: 'In' } } },
+    { t: 0.32, ik, poses: { LowerTorso: { pos: [0, 0, 0] } } },
+    { t: 0.6, contact: 'air', poses: { LowerTorso: { pos: [0, 1.4, 0] } } },
+    { t: 1, ik, poses: { LowerTorso: { pos: [0, 0, 0] } } },
+  ] }, { literal: true });
+  // Sinking in two steps the same way: motion flow turns the middle key into a pass-through.
+  const squat = prepare({ keyframes: [
+    { t: 0, ik, poses: { LowerTorso: { pos: [0, 0, 0] } } },
+    { t: 0.3, ik, poses: { LowerTorso: { rot: [-8, 0, 0], pos: [0, -0.4, 0.1] } } },
+    { t: 0.6, ik, poses: { LowerTorso: { rot: [-16, 0, 0], pos: [0, -0.9, 0.2] } } },
+    { t: 1, ik, poses: { LowerTorso: { pos: [0, 0, 0] } } },
+  ] }, { literal: true });
+  for (const [name, r, slide, sink] of [['push-off', jump, 0.15, 0.15], ['squat', squat, 0.35, 0.05]]) {
+    const m = motionStats(r.anim);
+    assert.deepEqual(r.issues, [], name);
+    assert.ok(m.footSlide < slide, `${name}: slide ${m.footSlide}`);
+    assert.ok(m.footSink < sink, `${name}: sink ${m.footSink}`);
+  }
+});
+
 test('examples: the jump is in the air, the idle stays on the ground, the wave uses the whole body', () => {
   const jump = motionStats(example('jump')), idle = motionStats(example('idle')), wave = motionStats(example('wave'));
   assert.ok(jump.airTime > 0.3);

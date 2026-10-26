@@ -231,11 +231,41 @@ function lockFeet(anim) {
   anim.keyframes = [...kfs, ...inserts.values()].sort((x, y) => x.t - y.t);
 }
 
+// Between two foot-lock keys the legs blend linearly while the body keeps its own easing, so a
+// planted foot drifts or dips (most when the body accelerates out of a squat). Gaps where the
+// foot leaves its place by more than LOCK_TOL are halved until it stays, down to 1/60 s.
+const LOCK_TOL = 0.02, LOCK_MIN = 1 / 60;
+const footAt = (anim, foot, t) => solve(sample(anim, t))[foot].p;
+function refineLocks(anim) {
+  for (let pass = 0; pass < 4; pass++) {
+    const inserts = new Map();
+    for (const foot of FEET) {
+      const keys = anim.keyframes.filter(k => k.ik?.[foot]);
+      for (let i = 0; i + 1 < keys.length; i++) {
+        const a = keys[i], b = keys[i + 1];
+        if (!a.linear?.includes(foot) || b.t - a.t < 2 * LOCK_MIN) continue;
+        const t = round((a.t + b.t) / 2);
+        const pa = footAt(anim, foot, a.t), pb = footAt(anim, foot, b.t), pm = footAt(anim, foot, t);
+        if (Math.hypot(...pm.map((v, k) => v - (pa[k] + pb[k]) / 2)) <= LOCK_TOL) continue;
+        const entry = inserts.get(t) ?? anim.keyframes.find(k => k.t === t) ?? { t, poses: {}, locked: true };
+        if (IK_CHAINS[foot].joints.some(j => entry.poses[j])) continue;
+        (entry.ik ??= {})[foot] = [...a.ik[foot]];
+        (entry.linear ??= []).push(foot);
+        inserts.set(t, entry);
+      }
+    }
+    if (!inserts.size) break;
+    const fresh = [...inserts.values()].filter(k => !anim.keyframes.includes(k));
+    anim.keyframes = [...anim.keyframes, ...fresh].sort((x, y) => x.t - y.t);
+    applyIK(anim, [...inserts.values()]);
+  }
+}
+
 const REST_LT = solve({}).LowerTorso;
 // Hands default to body space (they follow hips, jumps and turns), feet to world space.
-function applyIK(anim) {
+function applyIK(anim, keyframes = anim.keyframes) {
   const notes = [];
-  for (const kf of anim.keyframes) {
+  for (const kf of keyframes) {
     if (!kf.ik) continue;
     for (const [end, target] of Object.entries(kf.ik)) {
       const base = sample(anim, kf.t);
@@ -337,6 +367,8 @@ export function measure(anim, rig = RIG_R15) {
 
 // Full pipeline for every model answer and manual edit. IK and grounding run twice so planted
 // feet and the body height agree. Model output (literal) also gets automatic motion flow.
+// Foot-lock in-betweens have no body key, so the body there depends on its easing: they are
+// solved again once motion flow has changed it, then refined.
 export function prepare(input, { ground = true, literal = false } = {}) {
   const { anim, warnings } = normalize(input, { literal });
   const hasIK = anim.keyframes.some(k => k.ik);
@@ -346,9 +378,14 @@ export function prepare(input, { ground = true, literal = false } = {}) {
   if (hasIK) {
     ikNotes = applyIK(anim);
     if (ground) fixes = groundFeet(anim);
+  }
+  const flow = literal ? smoothFlow(anim) : 0;
+  if (flow) fixes = [...fixes, { code: 'flowSmoothed', count: flow }];
+  if (hasIK) {
+    if (flow) applyIK(anim, anim.keyframes.filter(k => k.locked));
+    refineLocks(anim);
     stripIK(anim);
   }
-  if (literal) { const count = smoothFlow(anim); if (count) fixes = [...fixes, { code: 'flowSmoothed', count }]; }
   return { anim, warnings: [...warnings, ...ikNotes], fixes, issues: inspect(anim) };
 }
 
