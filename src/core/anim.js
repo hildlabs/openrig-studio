@@ -368,6 +368,26 @@ function inside(world, part, p, rig, margin = 0.12) {
   const local = [0, 1, 2].map(i => R[i] * d[0] + R[3 + i] * d[1] + R[6 + i] * d[2]);
   return rig.parts[part].every((s, i) => Math.abs(local[i]) < s / 2 - margin);
 }
+// Joints whose pose at the end of the clip differs from the start (a visible jump in a loop).
+function loopGaps(anim, tracks = buildTracks(anim)) {
+  const a = sampleTracks(tracks, 0), b = sampleTracks(tracks, duration(anim));
+  return Object.keys(tracks).filter(part => {
+    const dq = Math.abs(quatFromR(a[part].R).reduce((s, v, i) => s + v * quatFromR(b[part].R)[i], 0));
+    return dq < 0.995 || a[part].p.some((v, i) => Math.abs(v - b[part].p[i]) > 0.02);
+  });
+}
+// Models write the same first and last keyframe for a loop, but IK and grounding can solve
+// them slightly differently. The start pose is copied onto the end for every joint that differs.
+function closeLoop(anim) {
+  const first = anim.keyframes[0], last = anim.keyframes.at(-1);
+  const parts = loopGaps(anim).filter(part => first.poses[part]);
+  for (const part of parts) {
+    const { rot, pos } = first.poses[part];
+    last.poses[part] = { rot: [...rot], pos: [...pos], ease: last.poses[part]?.ease ?? 'InOut' };
+  }
+  return parts.length;
+}
+
 // Problems between keyframes (30 fps) that the automatic fixes cannot see.
 export function inspect(anim, rig = RIG_R15) {
   const issues = [];
@@ -393,13 +413,7 @@ export function inspect(anim, rig = RIG_R15) {
       if (inside(world, body, point(world[probe], at), rig)) once(probe + body, t, { code: 'limbInBody', t: tt, part: probe, body });
     }
   }
-  if (anim.loop) {
-    const a = sampleTracks(tracks, 0), b = sampleTracks(tracks, end);
-    for (const part of Object.keys(tracks)) {
-      const dq = Math.abs(quatFromR(a[part].R).reduce((s, v, i) => s + v * quatFromR(b[part].R)[i], 0));
-      if (dq < 0.995 || a[part].p.some((v, i) => Math.abs(v - b[part].p[i]) > 0.02)) issues.push({ code: 'loopMismatch', part });
-    }
-  }
+  if (anim.loop) for (const part of loopGaps(anim, tracks)) issues.push({ code: 'loopMismatch', part });
   return issues;
 }
 
@@ -434,6 +448,9 @@ export function prepare(input, { ground = true, literal = false } = {}) {
     refineLocks(anim);
     stripIK(anim);
   }
+  // Only model output: in the editor the last keyframe of a loop stays what the user made it.
+  const closed = literal && anim.loop ? closeLoop(anim) : 0;
+  if (closed) fixes = [...fixes, { code: 'loopClosed', count: closed }];
   const lifted = ground ? groundBetween(anim) : 0;
   if (lifted) fixes = [...fixes, { code: 'liftedBetween', count: lifted }];
   return { anim, warnings: [...warnings, ...ikNotes], fixes, issues: inspect(anim) };
