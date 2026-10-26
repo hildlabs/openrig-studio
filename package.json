@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xzHannes/openrig-studio.git"
+    "url": "git+https://github.com/hildlabs/openrig-studio.git"
   },
-  "homepage": "https://github.com/xzHannes/openrig-studio#readme",
+  "homepage": "https://github.com/hildlabs/openrig-studio#readme",
   "bugs": {
-    "url": "https://github.com/xzHannes/openrig-studio/issues"
+    "url": "https://github.com/hildlabs/openrig-studio/issues"
   },
   "type": "module",
   "private": true,

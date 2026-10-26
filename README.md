@@ -25,7 +25,7 @@ You need [Node.js](https://nodejs.org) 20 or newer and at least one AI provider:
 | OpenAI API | An API key from platform.openai.com |
 
 ```sh
-git clone https://github.com/xzHannes/openrig-studio.git
+git clone https://github.com/hildlabs/openrig-studio.git
 cd openrig-studio
 npm install        # only needed for API keys
 npm start          # or double-click start.cmd (Windows) / run ./start.sh (macOS, Linux)
