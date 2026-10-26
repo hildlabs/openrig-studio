@@ -123,6 +123,26 @@ test('checks: collisions, pops, loops', () => {
   assert.equal(prepare({ keyframes: [{ t: 0, poses: {} }, { t: 1, poses: { RightUpperArm: { rot: [160, 0, 20] }, LeftUpperArm: { rot: [160, 0, -20] } } }] }).issues.length, 0);
 });
 
+test('loops from a model are closed, edited loops are only reported', () => {
+  // Same planted feet at start and end, but a slightly different crouch: grounding and IK
+  // leave the end a little off, like in real model answers.
+  const ik = { LeftFoot: [-0.55, 0, -0.05], RightFoot: [0.55, 0, -0.05] };
+  const raw = { loop: true, keyframes: [
+    { t: 0, ik, poses: { LowerTorso: { rot: [-20, 0, 0], pos: [0, -0.88, 0.2] }, Head: { rot: [10, 0, 0] } } },
+    { t: 0.8, ik, poses: { LowerTorso: { rot: [-14, 0, 0], pos: [0, -0.7, 0.15] }, Head: { rot: [4, 5, 0] } } },
+    { t: 1.6, ik, poses: { LowerTorso: { rot: [-20, 3, 0], pos: [0, -0.8, 0.2] }, Head: { rot: [10, 0, 0] } } },
+  ] };
+  const model = prepare(structuredClone(raw), { literal: true });
+  assert.ok(!codes(model.issues).includes('loopMismatch'), model.issues.map(i => formatIssue(i)).join(' | '));
+  assert.ok(model.fixes.some(f => f.code === 'loopClosed'));
+  const [a, b] = [0, 1.6].map(t => sample(model.anim, t).LowerTorso);
+  assert.ok(Math.hypot(...a.p.map((v, i) => v - b.p[i])) < 1e-6);
+  // In the editor the last keyframe stays as the user left it.
+  const edited = prepare(structuredClone(raw));
+  assert.ok(codes(edited.issues).includes('loopMismatch'));
+  assert.ok(!edited.fixes.some(f => f.code === 'loopClosed'));
+});
+
 test('motion flow only touches model output and keeps turning points', () => {
   const rise = [0, 1, 2, 3].map(i => ({ t: i * 0.3, contact: 'air', poses: { LowerTorso: { pos: [0, i, 0] } } }));
   assert.deepEqual(prepare({ keyframes: rise }, { literal: true }).anim.keyframes.map(k => k.poses.LowerTorso.ease).slice(0, 3), ['In', 'Linear', 'Out']);

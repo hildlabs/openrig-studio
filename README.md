@@ -61,6 +61,7 @@ Details and the Roblox measurements behind the preview: [docs/how-it-works.md](d
 ```
 prompts/            system prompt and presets (edit these to tune results)
 examples/           example clips added to the library on first start
+bench/              fixed requests for the benchmark (npm run bench)
 src/core/           rig, animation pipeline, IK, renderer (no dependencies)
 src/server/         local web server, providers, library, Studio bridge
 web/                the browser app (plain ES modules, three.js from a CDN)
@@ -73,8 +74,23 @@ data/               your clips and settings (created on first start, not in git)
 Issues and pull requests are welcome. Most of the animation quality comes from `prompts/system.md`, so prompt improvements are as valuable as code. Before opening a pull request:
 
 - Run `npm test`. It checks the Roblox reference values and that every example clip passes the checks.
+- If you changed the system prompt or the animation pipeline, run the benchmark before and after and mention the result (see below).
 - If you improved the example clips in the library folder *Examples*, run `npm run save-examples` to write them back to `examples/`.
 - Keep it dependency-free in `src/core/` and `web/`; the API SDKs are the only packages.
+
+### Benchmark
+
+`npm run bench` sends the 20 fixed requests in `bench/cases.json` (idle, walk, wave, punch, backflip, …) through the same pipeline as the app and measures every result: check findings, missed expectations (loop, length, airtime, torso movement), sliding and sinking feet, how many joints move, time and tokens. Nothing is added to your library; each run goes to `data/bench/<run>/` with the clips, contact sheets and a `report.html` to look through.
+
+```sh
+npm run bench -- --list                                              # engines and earlier runs
+npm run bench -- --engine claude-code:claude-sonnet-5-5:medium       # all cases, one model
+npm run bench -- --engine claude-code:claude-sonnet-5-5:medium --engine codex:gpt-6-sol:medium --cases jump,backflip --runs 3
+npm run bench -- --engine claude-code:claude-sonnet-5-5:medium --prompt prompts/my-test.md --baseline <run>
+npm run bench -- --compare <runA> <runB>
+```
+
+Models answer differently every time, so compare with `--runs 2` or more before trusting small differences, and still look at the contact sheets: the numbers catch technical problems, not whether a motion looks good.
 
 ## Privacy
 
