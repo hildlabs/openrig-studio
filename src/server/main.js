@@ -9,7 +9,7 @@ import * as lib from './library.js';
 import { startJob, getJob, startCompare, compareStatus, listCompares } from './generate.js';
 import * as studio from './studio.js';
 import * as rigs from './rigs.js';
-import { prepare, retarget, fromStudio, toRbxmx, toLuauBuilder } from '../core/anim.js';
+import { prepare, retarget, restClip, isRest, fromStudio, toRbxmx, toLuauBuilder } from '../core/anim.js';
 import { RIG_R15 } from '../core/rig.js';
 import { renderSheet, renderStrip } from '../core/render.js';
 
@@ -99,12 +99,17 @@ const routes = [
     return { png: renderStrip(clip.anim, await rigs.rigOf(clip)).png };
   }],
   // Moves the clip to another rig: the current version is retargeted and becomes a new version.
+  // Between R15 and R6 there is nothing to carry over, so only an empty clip can switch.
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/rig$/, async (req, [id]) => {
     const clip = await lib.loadClip(id);
     const { rig: next = '' } = await readBody(req);
     const to = next ? await rigs.loadRig(String(next)) : null;
     if ((to?.id ?? '') === (clip.rig ?? '')) return clip;
-    const result = retarget(clip.anim, await rigs.rigOf(clip), to?.rig ?? RIG_R15);
+    const from = await rigs.rigOf(clip), target = to?.rig ?? RIG_R15;
+    let result;
+    if ((from.family ?? 'R15') === (target.family ?? 'R15')) result = retarget(clip.anim, from, target);
+    else if (isRest(clip.anim)) result = prepare(restClip(clip.name), {}, target);
+    else throw Object.assign(new Error(`Only an empty clip can switch between ${from.family ?? 'R15'} and ${target.family ?? 'R15'}. Start a new clip for this rig.`), { status: 400 });
     if (to) clip.rig = to.id; else delete clip.rig;
     lib.addEntry(clip, result, 'retargeted', to?.name ?? 'R15');
     return lib.saveClip(clip);
@@ -118,12 +123,16 @@ const routes = [
   }],
   ['PATCH', /^\/api\/rigs\/([a-z0-9-]+)$/, async (req, [id]) => rigs.renameRig(id, (await readBody(req)).name)],
   ['DELETE', /^\/api\/rigs\/([a-z0-9-]+)$/, async (req, [id]) => rigs.deleteRig(id)],
-  ['GET', /^\/api\/clips\/([a-z0-9-]+)\/luau$/, async (req, [id]) => ({ text: toLuauBuilder((await lib.loadClip(id)).anim) })],
+  ['GET', /^\/api\/clips\/([a-z0-9-]+)\/luau$/, async (req, [id]) => {
+    const clip = await lib.loadClip(id);
+    return { text: toLuauBuilder(clip.anim, await rigs.rigOf(clip)) };
+  }],
   ['GET', /^\/api\/export\.rbxmx$/, async (req, m, url) => {
     const ids = (url.searchParams.get('ids') ?? '').split(',').filter(Boolean);
     const clips = await Promise.all(ids.map(id => lib.loadClip(id)));
     if (!clips.length) throw Object.assign(new Error('Nothing selected.'), { status: 400 });
-    return { file: toRbxmx(clips.map(c => c.anim)), name: clips.length === 1 ? fileName(clips[0].name) : `openrig_${clips.length}_clips` };
+    const items = await Promise.all(clips.map(async c => ({ anim: c.anim, rig: await rigs.rigOf(c) })));
+    return { file: toRbxmx(items), name: clips.length === 1 ? fileName(clips[0].name) : `openrig_${clips.length}_clips` };
   }],
   ['POST', /^\/api\/bulk$/, async (req) => {
     const { action, ids = [], folder } = await readBody(req);
@@ -154,15 +163,18 @@ const routes = [
     const clips = await Promise.all(ids.map(id => lib.loadClip(id)));
     // The preview rig gets the clips' body when they all share one.
     const shared = new Set(clips.map(c => c.rig ?? '')).size === 1 ? clips[0]?.rig : null;
-    return { message: await studio.pushClips(String(studioId), clips.map(c => c.anim), await bodyOf(shared)) };
+    const items = await Promise.all(clips.map(async c => ({ anim: c.anim, rig: await rigs.rigOf(c) })));
+    return { message: await studio.pushClips(String(studioId), items, await bodyOf(shared)) };
   }],
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/studio$/, async (req, [id]) => {
     const { studio: studioId, action } = await readBody(req);
-    const { anim, rig } = await lib.loadClip(id);
-    const body = await bodyOf(rig);
+    const clip = await lib.loadClip(id);
+    const { anim } = clip;
+    const body = await bodyOf(clip.rig);
+    const rig = await rigs.rigOf(clip);
     if (action === 'preview') return { message: await studio.previewClip(String(studioId), anim, body) };
-    if (action === 'playtest') return { message: await studio.playtestClip(String(studioId), anim) };
-    return { message: await studio.pushClips(String(studioId), [anim], body) };
+    if (action === 'playtest') return { message: await studio.playtestClip(String(studioId), anim, rig) };
+    return { message: await studio.pushClips(String(studioId), [{ anim, rig }], body) };
   }],
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/pull$/, async (req, [id]) => {
     const { studio: studioId, path: seqPath } = await readBody(req);

@@ -7,8 +7,18 @@
 
 export const RIG_R15 = {
   id: 'R15',
+  family: 'R15',
   root: 'HumanoidRootPart',
   hipHeight: 2.1924,
+  // What the pipeline needs to know about the body: the part whose pose moves the whole body,
+  // the parts that stand on the ground, whether hands and feet have IK chains (ik.js), what
+  // hands must not enter, and the points reported to models as measurements.
+  body: 'LowerTorso',
+  feet: ['LeftFoot', 'RightFoot'],
+  ik: true,
+  colliders: ['Head', 'UpperTorso', 'LowerTorso'],
+  probes: [['LeftHand', [0, 0, 0]], ['RightHand', [0, 0, 0]], ['LeftLowerArm', [0, -0.35, 0]], ['RightLowerArm', [0, -0.35, 0]]],
+  measured: [['Head', 'Head', [0, 0, 0]], ['LeftHand', 'LeftHand', [0, 0, 0]], ['RightHand', 'RightHand', [0, 0, 0]], ['LeftFoot', 'LeftFoot', [0, 0, 0]], ['RightFoot', 'RightFoot', [0, 0, 0]]],
   parts: {
     HumanoidRootPart: [2, 2, 1],
     LowerTorso: [1.9914, 0.4007, 1.004],
@@ -65,7 +75,57 @@ export const RIG_R15 = {
   },
 };
 
-export const POSE_PARTS = RIG_R15.joints.map(j => j.part1);
+// Classic R6 body (measured in Studio). Each of its Motor6Ds has the same rotation in C0 and C1,
+// so the rig is kept here in the R15 axes with pure translations, and poses mean the same as on
+// R15 (x+ swings an arm forward, ...). Only at the Roblox boundary does a pose turn into the
+// joint's own frame Q: Transform = Qᵀ · pose · Q on export, pose = Q · Transform · Qᵀ on import.
+const Q_ROOT = [-1, 0, 0, 0, 0, 1, 0, 1, 0], Q_RIGHT = [0, 0, 1, 0, 1, 0, -1, 0, 0], Q_LEFT = [0, 0, -1, 0, 1, 0, 1, 0, 0];
+export const RIG_R6 = {
+  id: 'R6',
+  family: 'R6',
+  root: 'HumanoidRootPart',
+  hipHeight: 2, // Roblox reports 0 for R6; the legs below the root part are 2 studs long
+  body: 'Torso',
+  feet: ['Left Leg', 'Right Leg'],
+  ik: false, // one-piece limbs: hands and feet have no IK chain
+  colliders: ['Head', 'Torso'],
+  probes: [['Left Arm', [0, -0.8, 0]], ['Right Arm', [0, -0.8, 0]]],
+  measured: [['Head', 'Head', [0, 0, 0]], ['LeftHand', 'Left Arm', [0, -1, 0]], ['RightHand', 'Right Arm', [0, -1, 0]], ['LeftFoot', 'Left Leg', [0, -1, 0]], ['RightFoot', 'Right Leg', [0, -1, 0]]],
+  parts: {
+    HumanoidRootPart: [2, 2, 1],
+    Torso: [2, 2, 1],
+    Head: [2, 1, 1],
+    'Left Arm': [1, 2, 1],
+    'Right Arm': [1, 2, 1],
+    'Left Leg': [1, 2, 1],
+    'Right Leg': [1, 2, 1],
+  },
+  // How big parts look where that differs from their size: the head part is 2 × 1 × 1, but
+  // what you see is its SpecialMesh (type Head, scale 1.25).
+  display: { Head: [1.25, 1.25, 1.25] },
+  joints: [
+    { name: 'RootJoint', part0: 'HumanoidRootPart', part1: 'Torso', c0: [0, 0, 0], c1: [0, 0, 0], frame: Q_ROOT },
+    { name: 'Neck', part0: 'Torso', part1: 'Head', c0: [0, 1, 0], c1: [0, -0.5, 0], frame: Q_ROOT },
+    { name: 'Right Shoulder', part0: 'Torso', part1: 'Right Arm', c0: [1, 0.5, 0], c1: [-0.5, 0.5, 0], frame: Q_RIGHT },
+    { name: 'Left Shoulder', part0: 'Torso', part1: 'Left Arm', c0: [-1, 0.5, 0], c1: [0.5, 0.5, 0], frame: Q_LEFT },
+    { name: 'Right Hip', part0: 'Torso', part1: 'Right Leg', c0: [1, -1, 0], c1: [0.5, 1, 0], frame: Q_RIGHT },
+    { name: 'Left Hip', part0: 'Torso', part1: 'Left Leg', c0: [-1, -1, 0], c1: [-0.5, 1, 0], frame: Q_LEFT },
+  ],
+  limits: {
+    Torso: RIG_R15.limits.LowerTorso,
+    Head: RIG_R15.limits.Head,
+    'Left Arm': RIG_R15.limits.LeftUpperArm,
+    'Right Arm': RIG_R15.limits.RightUpperArm,
+    'Left Leg': RIG_R15.limits.LeftUpperLeg,
+    'Right Leg': RIG_R15.limits.RightUpperLeg,
+  },
+};
+
+// Joints in parent-before-child order, named after the part they move (= Pose names).
+export const partsOf = rig => rig.joints.map(j => j.part1);
+export const POSE_PARTS = partsOf(RIG_R15);
+// Rigs stored before these fields existed are R15 bodies.
+export const withDefaults = rig => ({ family: 'R15', body: 'LowerTorso', feet: RIG_R15.feet, ik: true, colliders: RIG_R15.colliders, probes: RIG_R15.probes, measured: RIG_R15.measured, ...rig });
 // Body regions, used for colour coding in the UI.
 export const REGION = part => (/Leg|Foot/.test(part) ? 'legs' : /Torso/.test(part) ? 'torso' : part === 'Head' ? 'head' : 'arms');
 

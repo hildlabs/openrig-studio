@@ -4,7 +4,7 @@ import path from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { DATA } from './settings.js';
-import { RIG_R15, solve, lowestY } from '../core/rig.js';
+import { RIG_R15, RIG_R6, solve, lowestY, withDefaults } from '../core/rig.js';
 import { FEET } from '../core/anim.js';
 import { slug } from './library.js';
 
@@ -37,7 +37,7 @@ export function checkRig(data) {
     for (const k of ['c0R', 'c1R']) if (j[k] && j[k].some((v, i) => Math.abs(v - (i % 4 === 0 ? 1 : 0)) > 1e-4)) out[k] = j[k];
     return out;
   });
-  const rig = { id: 'custom', root: RIG_R15.root, hipHeight: 0, parts, joints, limits: RIG_R15.limits };
+  const rig = withDefaults({ id: 'custom', root: RIG_R15.root, hipHeight: 0, parts, joints, limits: RIG_R15.limits });
   // Stand it on the ground the same way as the default rig: soles at y = 0 in the rest pose.
   rig.hipHeight = Number.isFinite(data.hipHeight) && data.hipHeight > 0 ? data.hipHeight : RIG_R15.hipHeight;
   rig.hipHeight = Math.round((rig.hipHeight - lowestY(solve({}, rig), FEET, rig)) * 10000) / 10000;
@@ -53,13 +53,17 @@ export async function listRigs() {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 export async function loadRig(id) {
+  if (BUILTIN[id]) return BUILTIN[id];
   try { return JSON.parse(await readFile(rigPath(id), 'utf8')); }
   catch (e) { if (e.status) throw e; throw Object.assign(new Error('Rig not found.'), { status: 404 }); }
 }
+// Built-in bodies besides the default R15 one; imported rigs have ids from their names.
+export const BUILTIN = { r6: { id: 'r6', name: 'R6', rig: RIG_R6 } };
 // The body a clip is made for; a deleted rig falls back to the default one.
 export async function rigOf(clip) {
   if (!clip.rig) return RIG_R15;
-  try { return (await loadRig(clip.rig)).rig; } catch { return RIG_R15; }
+  if (BUILTIN[clip.rig]) return BUILTIN[clip.rig].rig;
+  try { return withDefaults((await loadRig(clip.rig)).rig); } catch { return RIG_R15; }
 }
 
 async function write(entry) {
@@ -73,16 +77,19 @@ export async function addRig(name, data, description = null) {
   const clean = String(name ?? '').replace(/[\p{Cc}]+/gu, ' ').trim().slice(0, 60) || 'Rig';
   const rig = checkRig(data);
   let id = slug(clean) || 'rig', n = 2;
-  while (existsSync(rigPath(id))) id = `${slug(clean) || 'rig'}-${n++}`;
+  while (existsSync(rigPath(id)) || BUILTIN[id]) id = `${slug(clean) || 'rig'}-${n++}`;
   rig.id = id;
   return write({ id, name: clean, createdAt: now(), description, rig });
 }
+const builtIn = id => { if (BUILTIN[id]) throw Object.assign(new Error('Built-in rigs cannot be changed.'), { status: 400 }); };
 export async function renameRig(id, name) {
+  builtIn(id);
   const entry = await loadRig(id);
   entry.name = String(name ?? '').replace(/[\p{Cc}]+/gu, ' ').trim().slice(0, 60) || entry.name;
   return write(entry);
 }
 export async function deleteRig(id) {
+  builtIn(id);
   await unlink(rigPath(id)).catch(() => { throw Object.assign(new Error('Rig not found.'), { status: 404 }); });
   return { ok: true };
 }

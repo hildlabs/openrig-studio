@@ -13,6 +13,7 @@ import { formatIssues } from '../core/messages.js';
 import { renderSheet } from '../core/render.js';
 
 const BASE_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system.md'), 'utf8');
+const R6_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system-r6.md'), 'utf8');
 const LANG_NAME = { en: 'English', de: 'German' };
 // The benchmark passes its own base prompt and leaves out the project style.
 export async function systemPrompt(lang, { base = BASE_PROMPT, withStyle = true } = {}) {
@@ -37,27 +38,27 @@ function extractJson(text) {
   return null;
 }
 
-function context(clip, anim, rep) {
-  const parts = ['## Current animation\n```json\n' + JSON.stringify(forModel(anim)) + '\n```',
-    '## Measurements (studs, character faces -Z, ground y=0)\n' + measure(anim)];
+function context(clip, anim, rep, rig) {
+  const parts = ['## Current animation\n```json\n' + JSON.stringify(forModel(anim, rig)) + '\n```',
+    '## Measurements (studs, character faces -Z, ground y=0)\n' + measure(anim, rig)];
   if (rep) parts.push('## Check report\n' + rep);
   const wishes = clip.chat.filter(m => m.role === 'user').slice(-6).map(m => `- ${m.text}`).join('\n');
   if (wishes) parts.push('## Earlier requests\n' + wishes);
   return parts;
 }
-function buildRequest(clip, wish, mode) {
+function buildRequest(clip, wish, mode, rig) {
   const parts = [];
   if (mode !== 'create') {
     const cur = clip.history.find(h => h.id === clip.current);
-    parts.push(...context(clip, clip.anim, cur ? report(cur) : ''));
+    parts.push(...context(clip, clip.anim, cur ? report(cur) : '', rig));
   }
   parts.push(`## ${mode === 'create' ? 'Request for a new animation' : 'New request'}\n${wish}`);
   return parts.join('\n\n');
 }
-function buildReview(clip, wish, result, times) {
+function buildReview(clip, wish, result, times, rig) {
   return [
     '## Original request\n' + wish,
-    ...context(clip, result.anim, report(result)).map(p => p.replace('## Current animation', '## Your draft')),
+    ...context(clip, result.anim, report(result), rig).map(p => p.replace('## Current animation', '## Your draft')),
     `## Contact sheet (contact-sheet.png)\nThe image shows your draft. Top row: three-quarter view from the front right. Bottom row: side view from the right; the character faces right in the image. Columns are the times ${times.map(t => `${t}s`).join(', ')}.`,
     '## Task\nReview the draft strictly, like an animation lead: does the motion read instantly? Clear silhouettes? Anything stiff, robotic, random or twisted? Limbs inside each other, floating feet, snaps between frames? Anticipation, timing, settle and weight? Does it match the request? Fix everything in the check report. Then return the improved, complete animation; in "notes" say briefly what you improved.',
   ].join('\n\n');
@@ -77,19 +78,20 @@ export const getJob = id => jobs.get(id);
 
 // Draft → checks → optional visual review, without touching the library. clip only provides
 // the current animation and earlier requests ({ chat: [] } for a new one).
-export async function runPipeline({ clip, wish, mode, engine, system, review: withReview = true, onStep = () => {} }) {
+// rig: the body the model works on (the default R15 one, or R6 with its own system prompt).
+export async function runPipeline({ clip, wish, mode, engine, system, review: withReview = true, onStep = () => {}, rig = RIG_R15 }) {
   let usage = null;
   const ask = async (text, images) => { const a = await callModel({ ...engine, system, text, images }); usage = addUsage(usage, a.usage); return a.text; };
 
   onStep('draft');
-  const request = buildRequest(clip, wish, mode);
+  const request = buildRequest(clip, wish, mode, rig);
   let json = extractJson(await ask(request));
   if (!json) {
     onStep('retry');
     json = extractJson(await ask(request + '\n\nIMPORTANT: your last answer contained no valid JSON. Answer only with the ```json block.'));
   }
   if (!json) throw new Error('The model returned no readable animation.');
-  const draft = prepare(json, { literal: true });
+  const draft = prepare(json, { literal: true }, rig);
   const draftUsage = usage;
   let result = draft, notes = json.notes ?? '', plan = json.plan;
   let review = null, better = null;
@@ -97,11 +99,11 @@ export async function runPipeline({ clip, wish, mode, engine, system, review: wi
   else if (withReview) {
     onStep('review');
     try {
-      const sheet = renderSheet(draft.anim);
-      better = extractJson(await ask(buildReview(clip, wish, draft, sheet.times), [{ name: 'contact-sheet.png', data: sheet.png }]));
+      const sheet = renderSheet(draft.anim, { rig });
+      better = extractJson(await ask(buildReview(clip, wish, draft, sheet.times, rig), [{ name: 'contact-sheet.png', data: sheet.png }]));
       if (!better) review = { applied: false, reason: 'noJson' };
       else {
-        const r2 = prepare(better, { literal: true });
+        const r2 = prepare(better, { literal: true }, rig);
         // The review sees what the checks cannot; allow one extra minor finding, not more.
         if (score(r2) <= score(draft) + 1) { result = r2; notes = better.notes ?? notes; plan = better.plan ?? plan; review = { applied: true }; }
         else review = { applied: false, reason: 'worse', draft: score(draft), review: score(r2) };
@@ -118,19 +120,21 @@ async function generate(job, { id, prompt, engine, mode: requested, lang = 'en',
   const mode = requested === 'improve' ? 'improve' : isRest(clip.anim) ? 'create' : 'edit';
   const wish = mode === 'improve' ? (prompt?.trim() ? `${IMPROVE}\nAlso: ${prompt.trim()}` : IMPROVE) : prompt.trim();
   const label = engineLabel(await listProviders(), engine);
-  const system = await systemPrompt(lang);
   const started = Date.now();
-  // Models always work on the default body (the system prompt describes it). A clip made for
-  // another rig is shown to them retargeted back, and their answer is retargeted onto the rig.
+  // R15 models always work on the default body (the system prompt describes it): a clip made
+  // for another R15 rig is shown to them retargeted back, and their answer is retargeted onto
+  // the rig. R6 has its own prompt and is worked on directly.
   const rig = await rigOf(clip);
+  const r6 = rig.family === 'R6';
+  const system = await systemPrompt(lang, { base: r6 ? R6_PROMPT : BASE_PROMPT });
   const fit = r => {
-    if (rig === RIG_R15) return r;
+    if (rig === RIG_R15 || r6) return r;
     const moved = retarget(r.anim, RIG_R15, rig);
     return { ...r, anim: moved.anim, fixes: [...r.fixes, ...moved.fixes], issues: moved.issues };
   };
-  const view = rig === RIG_R15 ? clip : { ...clip, anim: retarget(clip.anim, rig, RIG_R15).anim };
+  const view = rig === RIG_R15 || r6 ? clip : { ...clip, anim: retarget(clip.anim, rig, RIG_R15).anim };
   const out = await runPipeline({
-    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; },
+    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; }, rig: r6 ? rig : RIG_R15,
   });
   const { notes, plan, review, usage, draftUsage } = out;
   const draft = fit(out.draft), result = fit(out.result);

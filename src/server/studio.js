@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 import { loadSettings } from './settings.js';
 import { firstExisting, newestIn } from './process.js';
 import { toLuauBuilder, luaStr } from '../core/anim.js';
+import { RIG_R15 } from '../core/rig.js';
 
 export const RIG_NAME = 'OpenRigPreview';
 
@@ -79,7 +80,7 @@ async function luau(s, studioId, code, datamodel = 'Edit') {
   return res;
 }
 
-const seqFn = anim => `(function()\n${toLuauBuilder(anim)}\nend)`;
+const seqFn = (anim, rig = RIG_R15) => `(function()\n${toLuauBuilder(anim, rig)}\nend)`;
 // The preview rig appears ~14 studs in front of the Studio camera, standing on whatever is below.
 // For a clip made for an imported rig it gets that rig's HumanoidDescription (scales and body
 // parts); a preview rig of another body is replaced.
@@ -91,7 +92,7 @@ const ensureRig = (body = null) => `local function ensureRig()
 	if rig then return rig end
 	local desc = Instance.new("HumanoidDescription")
 ${DESCRIPTION_KEYS.filter(k => Number.isFinite(body?.description?.[k])).map(k => `	desc.${k} = ${Number(body.description[k])}
-`).join('')}	rig = game:GetService("Players"):CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
+`).join('')}	rig = game:GetService("Players"):CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.${body?.rig?.family === 'R6' ? 'R6' : 'R15'})
 	rig.Name = "${RIG_NAME}"
 	rig:SetAttribute("OpenRigBody", body)
 	local cam = workspace.CurrentCamera
@@ -101,7 +102,10 @@ ${DESCRIPTION_KEYS.filter(k => Number.isFinite(body?.description?.[k])).map(k =>
 	local spot = cam.CFrame.Position + flat.Unit * 14
 	local hit = workspace:Raycast(spot + Vector3.new(0, 60, 0), Vector3.new(0, -500, 0))
 	local ground = hit and hit.Position.Y or spot.Y - 3
-	local y = ground + rig.Humanoid.HipHeight + rig.HumanoidRootPart.Size.Y / 2
+	-- R6 reports a HipHeight of 0: its legs hang below the root part.
+	local legs = rig.Humanoid.RigType == Enum.HumanoidRigType.R6 and rig["Left Leg"].Size.Y or rig.Humanoid.HipHeight
+	local y = ground + legs + rig.HumanoidRootPart.Size.Y / 2
+	rig.PrimaryPart = rig.HumanoidRootPart -- R6 models pivot around the head otherwise
 	rig:PivotTo(CFrame.lookAt(Vector3.new(spot.X, y, spot.Z), Vector3.new(cam.CFrame.Position.X, y, cam.CFrame.Position.Z)))
 	rig.HumanoidRootPart.Anchored = true
 	rig.Parent = workspace
@@ -109,7 +113,8 @@ ${DESCRIPTION_KEYS.filter(k => Number.isFinite(body?.description?.[k])).map(k =>
 end`;
 
 // Saves clips where the Animation Editor keeps its saves: ServerStorage > RBX_ANIMSAVES > rig.
-function pushLuau(anims, body) {
+// items: [{ anim, rig }]
+function pushLuau(items, body) {
   return `${ensureRig(body)}
 local rig = ensureRig()
 local storage = game:GetService("ServerStorage")
@@ -127,7 +132,7 @@ if not slot then
 end
 slot.Value = rig
 local names = {}
-for _, build in { ${anims.map(seqFn).join(',\n')} } do
+for _, build in { ${items.map(x => seqFn(x.anim, x.rig)).join(',\n')} } do
 	local seq = build()
 	local old = slot:FindFirstChild(seq.Name)
 	if old then old:Destroy() end
@@ -139,7 +144,7 @@ return #names .. " → " .. slot:GetFullName()`;
 }
 // Plays a clip in the edit viewport via Animator:StepAnimations (max. 20 s).
 function previewLuau(anim, loops, body) {
-  return `local seq = ${seqFn(anim)}()
+  return `local seq = ${seqFn(anim, body?.rig)}()
 ${ensureRig(body)}
 local rig = ensureRig()
 local hum = rig:FindFirstChildOfClass("Humanoid")
@@ -167,19 +172,20 @@ track:Destroy()
 return string.format("%.1f s", total)`;
 }
 // Plays on the local player's avatar in a running playtest (client side, replicates).
-function playtestLuau(anim) {
+function playtestLuau(anim, rig = RIG_R15) {
+  const family = rig.family ?? 'R15', other = family === 'R6' ? 'R15' : 'R6';
   return `local player = game:GetService("Players").LocalPlayer
 local char = player.Character or player.CharacterAdded:Wait()
 local hum = char:WaitForChild("Humanoid", 10)
 if not hum then return "ERR:The avatar has no Humanoid." end
-if hum.RigType ~= Enum.HumanoidRigType.R15 then return "ERR:The playtest avatar is R6; this animation needs R15 (Game Settings > Avatar)." end
+if hum.RigType ~= Enum.HumanoidRigType.${family} then return "ERR:The playtest avatar is ${other}; this animation needs ${family} (Game Settings > Avatar)." end
 local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
 for _, tr in animator:GetPlayingAnimationTracks() do
 	if tr.Animation and tr.Animation.Name == "OpenRigPreview" then tr:Stop(0.1) end
 end
 local a = Instance.new("Animation")
 a.Name = "OpenRigPreview"
-a.AnimationId = game:GetService("KeyframeSequenceProvider"):RegisterKeyframeSequence(${seqFn(anim)}())
+a.AnimationId = game:GetService("KeyframeSequenceProvider"):RegisterKeyframeSequence(${seqFn(anim, rig)}())
 local track = animator:LoadAnimation(a)
 track.Priority = Enum.AnimationPriority.Action4
 track.Looped = ${anim.loop === true}
@@ -252,17 +258,17 @@ end
 return game:GetService("HttpService"):JSONEncode({ name = model.Name, rig = { parts = parts, joints = joints, hipHeight = hum.HipHeight }, description = description })`;
 
 const STOP_PLAYTEST = 'Roblox Studio is running a playtest. Stop it first.';
-export const pushClips = (studioId, anims, body = null) => session(async s => {
+export const pushClips = (studioId, items, body = null) => session(async s => {
   if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
-  return luau(s, studioId, pushLuau(anims, body));
+  return luau(s, studioId, pushLuau(items, body));
 });
 export const previewClip = (studioId, anim, body = null) => session(async s => {
   if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
   return luau(s, studioId, previewLuau(anim, anim.loop ? 3 : 2, body));
 });
-export const playtestClip = (studioId, anim) => session(async s => {
+export const playtestClip = (studioId, anim, rig) => session(async s => {
   if (await inEdit(s, studioId) !== 'play') throw new Error('Start a playtest in Roblox Studio first (F5).');
-  return luau(s, studioId, playtestLuau(anim), 'Client');
+  return luau(s, studioId, playtestLuau(anim, rig), 'Client');
 });
 export const listSaves = studioId => session(async s => {
   if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
