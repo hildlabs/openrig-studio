@@ -2,7 +2,8 @@
 // and stored in data/rigs. A clip's `rig` names the one it is made for; none = the default rig.
 import path from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';
-import { mkdir, readFile, writeFile, rename, unlink } from 'node:fs/promises';
+import { mkdir, readFile, unlink } from 'node:fs/promises';
+import { writeJson } from './files.js';
 import { DATA } from './settings.js';
 import { RIG_R15, RIG_R6, solve, lowestY, withDefaults } from '../core/rig.js';
 import { FEET } from '../core/anim.js';
@@ -67,10 +68,7 @@ export async function rigOf(clip) {
 }
 
 async function write(entry) {
-  await mkdir(RIGS, { recursive: true });
-  const file = rigPath(entry.id);
-  await writeFile(file + '.tmp', JSON.stringify(entry, null, 1), 'utf8');
-  await rename(file + '.tmp', file);
+  await writeJson(rigPath(entry.id), entry);
   return entry;
 }
 export async function addRig(name, data, description = null) {

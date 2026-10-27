@@ -2,12 +2,13 @@
 // of its draft) → new history entry. Plus model comparisons (one clip per engine).
 import path from 'node:path';
 import { readFileSync, readdirSync } from 'node:fs';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
+import { writeJson } from './files.js';
 import { ROOT, DATA, loadSettings } from './settings.js';
 import { callModel, listProviders, acceptsImages } from './providers/index.js';
 import { loadClip, saveClip, addEntry, createClip, slug } from './library.js';
 import { prepare, retarget, measure, forModel, isRest } from '../core/anim.js';
-import { RIG_R15 } from '../core/rig.js';
+import { RIG_R15, partsOf } from '../core/rig.js';
 import { rigOf } from './rigs.js';
 import { formatIssues } from '../core/messages.js';
 import { renderSheet } from '../core/render.js';
@@ -29,6 +30,13 @@ const report = r => formatIssues([...r.warnings, ...r.issues], 'en').map(s => `-
 const score = r => r.warnings.length + r.issues.length;
 const addUsage = (a, b) => Object.fromEntries(['calls', 'input', 'cached', 'output', 'reasoning'].map(k => [k, (a?.[k] ?? 0) + (b?.[k] ?? 0)]));
 const minus = (a, b) => Object.fromEntries(Object.keys(a).map(k => [k, a[k] - (b?.[k] ?? 0)]));
+
+// Pose names in an answer that the rig doesn't have, when they are more than a third of all names.
+function jointsMissingIn(json, rig) {
+  const names = new Set(json.keyframes.flatMap(k => Object.keys(k?.poses ?? {})));
+  const missing = [...names].filter(n => !partsOf(rig).includes(n));
+  return missing.length > names.size / 3 ? missing : [];
+}
 
 function extractJson(text) {
   const blocks = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].map(m => m[1]);
@@ -91,6 +99,17 @@ export async function runPipeline({ clip, wish, mode, engine, system, review: wi
     json = extractJson(await ask(request + '\n\nIMPORTANT: your last answer contained no valid JSON. Answer only with the ```json block.'));
   }
   if (!json) throw new Error('The model returned no readable animation.');
+  // Joints this body doesn't have (e.g. R15 names for an R6 clip) are dropped; if that is most of
+  // the answer, the model gets one more try with the names it has to use.
+  const foreign = jointsMissingIn(json, rig);
+  if (foreign.length) {
+    onStep('retry');
+    const again = extractJson(await ask(`${request}
+
+IMPORTANT: this character is ${rig.family ?? 'R15'}. Your last answer used joints it doesn't have (${foreign.join(', ')}). Use only these pose names: ${partsOf(rig).join(', ')}.`));
+    if (!again || jointsMissingIn(again, rig).length) throw new Error(`The model answered with joints this ${rig.family ?? 'R15'} character doesn't have (${foreign.join(', ')}). Try again or pick another model.`);
+    json = again;
+  }
   const draft = prepare(json, { literal: true }, rig);
   const draftUsage = usage;
   let result = draft, notes = json.notes ?? '', plan = json.plan;
@@ -197,7 +216,7 @@ export async function startCompare({ title, prompt, runs, review, lang }) {
     const job = await startJob({ id: clip.id, prompt: record.prompt, engine, mode: 'chat', review: record.review, lang, fixedName: clip.name });
     record.items.push({ clipId: clip.id, label, engine, jobId: job.id });
   }
-  await writeFile(comparePath(record.id), JSON.stringify(record, null, 1), 'utf8');
+  await writeJson(comparePath(record.id), record);
   return compareStatus(record.id);
 }
 export async function compareStatus(id) {

@@ -2,7 +2,8 @@
 // Keys never leave this machine except to the provider they belong to.
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+import { writeJson } from './files.js';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -44,9 +45,7 @@ export async function saveSettings(patch) {
   const current = await loadSettings();
   const next = { ...current };
   for (const key of Object.keys(DEFAULTS)) if (typeof patch[key] === 'string') next[key] = patch[key].trim();
-  await mkdir(DATA, { recursive: true });
-  await writeFile(FILE + '.tmp', JSON.stringify(next, null, 2), 'utf8');
-  await rename(FILE + '.tmp', FILE);
+  await writeJson(FILE, next, 2);
   cache = next;
   return next;
 }

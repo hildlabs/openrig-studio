@@ -38,7 +38,10 @@ export function normalize(input, { literal = false } = {}, rig = RIG_R15) {
     const entry = byTime.get(t) ?? { t, poses: {} };
     if (kf?.contact === 'air') entry.contact = 'air';
     for (const [part, pose] of Object.entries(kf?.poses ?? {})) {
-      if (!parts.includes(part)) { warnings.push({ code: 'unknownJoint', part }); continue; }
+      if (!parts.includes(part)) {
+        if (!warnings.some(w => w.code === 'unknownJoint' && w.part === part)) warnings.push({ code: 'unknownJoint', part });
+        continue;
+      }
       const rot = vec3(pose?.rot), pos = vec3(pose?.pos);
       if (part !== rig.body && !isZero(pos) && pos.some(v => Math.abs(v) > 0.6)) {
         warnings.push({ code: 'offsetTooLarge', part, t, body: rig.body });

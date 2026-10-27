@@ -2,8 +2,9 @@
 // A clip keeps its history (generated, draft, edited, imported, restored) instead of version numbers.
 import path from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { ROOT, DATA } from './settings.js';
+import { writeJson, moveFile } from './files.js';
 import { prepare, restClip, cleanName } from '../core/anim.js';
 
 const CLIPS = path.join(DATA, 'clips');
@@ -17,12 +18,6 @@ const clipPath = id => {
   if (!/^[a-z0-9-]+$/.test(id)) throw Object.assign(new Error('Invalid clip id.'), { status: 400 });
   return path.join(CLIPS, `${id}.json`);
 };
-async function writeJson(file, data) {
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file + '.tmp', JSON.stringify(data, null, 1), 'utf8');
-  await rename(file + '.tmp', file);
-}
-
 export async function loadClip(id) {
   try { return JSON.parse(await readFile(clipPath(id), 'utf8')); }
   catch (e) { if (e.status) throw e; throw Object.assign(new Error('Clip not found.'), { status: 404 }); }
@@ -86,7 +81,7 @@ export async function duplicateClip(id) {
 
 export async function trashClip(id) {
   await mkdir(TRASH, { recursive: true });
-  await rename(clipPath(id), path.join(TRASH, `${id}-${Date.now()}.json`));
+  await moveFile(clipPath(id), path.join(TRASH, `${id}-${Date.now()}.json`));
 }
 
 // Bundled examples (examples/*.json) are copied into the library once, into the folder
