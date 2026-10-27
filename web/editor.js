@@ -4,7 +4,7 @@ import { t, ago, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import { store, studioId, show } from './app.js';
 import { Viewer } from './stage.js';
-import { RIG_R15, POSE_PARTS, REGION, eulerDeg } from '/core/rig.js';
+import { RIG_R15, RIG_R6, REGION, eulerDeg } from '/core/rig.js';
 import { buildTracks, sampleTracks, EASES } from '/core/anim.js';
 import { formatIssue } from '/core/messages.js';
 import { createUndo } from './undo.js';
@@ -12,11 +12,15 @@ import { createUndo } from './undo.js';
 const FPS = 60;
 const snap = v => Math.round(Math.max(0, v) * FPS) / FPS;
 const r3 = v => Math.round(v * 1000) / 1000;
-const GROUPS = [
-  ['LowerTorso', 'UpperTorso'], ['Head'],
-  ['RightUpperArm', 'RightLowerArm', 'RightHand'], ['LeftUpperArm', 'LeftLowerArm', 'LeftHand'],
-  ['RightUpperLeg', 'RightLowerLeg', 'RightFoot'], ['LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot'],
-];
+// Dope sheet rows per body family, grouped by limb.
+const GROUPS = {
+  R15: [
+    ['LowerTorso', 'UpperTorso'], ['Head'],
+    ['RightUpperArm', 'RightLowerArm', 'RightHand'], ['LeftUpperArm', 'LeftLowerArm', 'LeftHand'],
+    ['RightUpperLeg', 'RightLowerLeg', 'RightFoot'], ['LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot'],
+  ],
+  R6: [['Torso'], ['Head'], ['Right Arm'], ['Left Arm'], ['Right Leg'], ['Left Leg']],
+};
 const REGION_COLOR = { arms: 'var(--arms)', head: 'var(--arms)', torso: 'var(--torso)', legs: 'var(--legs)' };
 const S = { clip: null, anim: null, tracks: null, dirty: false, t: 0, playing: false, speed: 1, loop: true, part: null, job: null, lower: prefs.get('lower', 'dope'), inspKey: '' };
 let root, viewer, lastFrame = performance.now(), scrubbing = false, sheetMeta = null;
@@ -110,7 +114,8 @@ export function relabel() {
 
 // Rigs with other proportions (data/rigs); a clip's `rig` names the one it is made for.
 let rigs = [];
-const rigData = clip => rigs.find(r => r.id === clip?.rig)?.rig ?? RIG_R15;
+const rigData = clip => (clip?.rig === 'r6' ? RIG_R6 : rigs.find(r => r.id === clip?.rig)?.rig ?? RIG_R15);
+const body = () => rigData(S.clip);
 async function loadRigs() { try { rigs = await api('/api/rigs'); } catch { rigs = []; } }
 
 export async function activate() {
@@ -342,7 +347,7 @@ function renderDope() {
     ticks += `<span class="tick${lastTick ? ' last' : ''}" style="left:${x(v)};${label ? '' : 'height:35%'}">${label ? v.toFixed(1) : ''}</span>`;
   }
   const flags = S.anim.events.map((e, i) => `<span class="flag" data-t="${e.t}" data-ev="${i}" style="left:${x(e.t)}" title="${esc(e.value)}">${esc(e.name)}</span>`).join('');
-  const rows = GROUPS.map(group => group.map((part, i) => {
+  const rows = GROUPS[body().family ?? 'R15'].map(group => group.map((part, i) => {
     const region = REGION(part);
     const keys = S.anim.keyframes.filter(k => k.poses[part]).map(k => `<button class="key" data-region="${region}" data-t="${k.t}" data-part="${part}" style="left:${x(k.t)}" title="${part} ${k.t}s"></button>`).join('');
     return `<div class="dope-row${part === S.part ? ' sel' : ''}${i === 0 ? ' group-start' : ''}" data-row="${part}"><div class="dope-label" data-region="${region}" data-part="${part}">${part}</div><div class="dope-track">${keys}</div></div>`;
@@ -400,9 +405,9 @@ function renderInspector() {
     html += `<h3><span class="swatch" style="background:${REGION_COLOR[REGION(S.part)]}"></span>${S.part}</h3><p class="num">${kf ? t('insp.atKey', { t: kf.t.toFixed(3) }) : t('insp.between', { t: S.t.toFixed(3) })}</p>`;
     const pose = kf?.poses[S.part];
     if (pose) {
-      const lim = RIG_R15.limits[S.part];
+      const lim = body().limits[S.part];
       html += pose.rot.map((v, i) => slider('xyz'[i], `rot.${i}`, v, lim[i][0], lim[i][1], 1)).join('');
-      if (S.part === 'LowerTorso') html += pose.pos.map((v, i) => slider('XYZ'[i], `pos.${i}`, v, -4, 4, 0.01)).join('') + `<p>${t('insp.groundNote')}</p>`;
+      if (S.part === body().body) html += pose.pos.map((v, i) => slider('XYZ'[i], `pos.${i}`, v, -4, 4, 0.01)).join('') + `<p>${t('insp.groundNote')}</p>`;
       html += `<div class="line"><label>${t('insp.easing')}</label><select data-ease>${EASES.map(e => `<option value="${e}"${e === pose.ease ? ' selected' : ''}>${t(`ease.${e}`)}</option>`).join('')}</select></div>
         <div class="line"><button class="btn danger" data-act="delPose">${icon('trash')}${t('insp.removeKey')}</button></div>`;
     } else html += `<div class="line"><button class="btn primary" data-act="addPose">${icon('plus')}${t('insp.addKey')}</button></div>`;
@@ -417,7 +422,7 @@ function renderInspector() {
   html += `<div class="section"><h3>${t('insp.clip')}</h3>
     <div class="line"><label class="check"><input type="checkbox" data-loop ${S.anim.loop ? 'checked' : ''}>${t('clip.loop')}</label>
     <label style="min-width:0">${t('insp.priority')}</label><select data-prio>${['Idle', 'Movement', 'Action', 'Action2', 'Action3', 'Action4'].map(p => `<option${p === S.anim.priority ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
-    <div class="line" title="${esc(t('insp.rigHint'))}"><label>${t('insp.rig')}</label><select data-rig><option value="">${t('insp.rigDefault')}</option>${rigs.map(r => `<option value="${esc(r.id)}"${r.id === S.clip.rig ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}<option value="${IMPORT_RIG}">${t('insp.rigImport')}</option></select></div>
+    <div class="line" title="${esc(t('insp.rigHint'))}"><label>${t('insp.rig')}</label><select data-rig><option value="">${t('insp.rigDefault')}</option><option value="r6"${S.clip.rig === 'r6' ? ' selected' : ''}>R6</option>${rigs.map(r => `<option value="${esc(r.id)}"${r.id === S.clip.rig ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}<option value="${IMPORT_RIG}">${t('insp.rigImport')}</option></select></div>
     <div class="line"><select data-evname>${['Footstep', 'Sound', 'VFX', 'Hit'].map(n => `<option>${n}</option>`).join('')}</select><button class="btn" data-act="addEv">${t('insp.addEvent', { t: S.t.toFixed(2) })}</button></div>
     ${S.anim.events.map((e, i) => `<div class="line num"><span>${e.t.toFixed(2)} s</span><b>${esc(e.name)}</b><span class="muted">${esc(e.value)}</span><button class="btn icon quiet" data-act="delEv" data-i="${i}" title="${t('actions.delete')}">${icon('trash')}</button></div>`).join('')}</div>`;
   html += `<div class="savebar${S.dirty ? '' : ' hidden'}"><span class="grow">${t('insp.unsaved')}</span><button class="btn" data-act="discard">${t('insp.discard')}</button><button class="btn primary" data-act="save">${t('insp.save')}</button></div>`;
@@ -448,7 +453,7 @@ async function switchRig(value) {
     }
     if (S.dirty) await save();
     setClip(await api(`/api/clips/${S.clip.id}/rig`, { method: 'POST', body: { rig } }), { keepTime: true });
-    toast(t('rig.switched', { rig: rigs.find(r => r.id === rig)?.name ?? t('insp.rigDefault') }));
+    toast(t('rig.switched', { rig: rig === 'r6' ? 'R6' : rigs.find(r => r.id === rig)?.name ?? t('insp.rigDefault') }));
   } catch (e) { toast(e.message, true); renderInspector(); }
 }
 function selectPart(part) {

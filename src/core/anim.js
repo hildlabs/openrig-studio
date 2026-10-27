@@ -3,14 +3,14 @@
 // feet on the ground, check for problems, and export KeyframeSequences (.rbxmx / Luau).
 // Findings are structured objects, see messages.js.
 import {
-  RIG_R15, POSE_PARTS, IDENTITY, anglesDeg, eulerDeg, quatFromR, rFromQuat, quatLog, alignQuat,
-  quatFromRotVec, solve, lowestY, cf, point, mul, inv,
+  RIG_R15, partsOf, IDENTITY, anglesDeg, eulerDeg, quatFromR, rFromQuat, quatLog, alignQuat,
+  quatFromRotVec, solve, lowestY, cf, point, mul, inv, rotV, mulR,
 } from './rig.js';
 import { IK_CHAINS, solveChain } from './ik.js';
 
 export const EASES = ['InOut', 'Out', 'In', 'Linear', 'Constant'];
 export const PRIORITIES = { Idle: 0, Movement: 1, Action: 2, Action2: 3, Action3: 4, Action4: 5, Core: 1000 };
-export const FEET = ['LeftFoot', 'RightFoot'];
+export const FEET = RIG_R15.feet;
 // Stored clips are plain JSON and may come from elsewhere, so exports re-check these too.
 export const priorityOf = p => (typeof p === 'string' && Object.hasOwn(PRIORITIES, p) ? p : 'Action');
 // Names end up in Luau, XML and the UI: no control or line-break characters.
@@ -30,6 +30,7 @@ export const isRest = anim => anim.keyframes.every(k => Object.keys(k.poses).len
 // nearest equivalent, which is how Roblox blends them anyway.
 export function normalize(input, { literal = false } = {}, rig = RIG_R15) {
   const warnings = [];
+  const parts = partsOf(rig);
   const src = input && typeof input === 'object' ? input : {};
   const byTime = new Map();
   for (const kf of Array.isArray(src.keyframes) ? src.keyframes : []) {
@@ -37,16 +38,16 @@ export function normalize(input, { literal = false } = {}, rig = RIG_R15) {
     const entry = byTime.get(t) ?? { t, poses: {} };
     if (kf?.contact === 'air') entry.contact = 'air';
     for (const [part, pose] of Object.entries(kf?.poses ?? {})) {
-      if (!POSE_PARTS.includes(part)) { warnings.push({ code: 'unknownJoint', part }); continue; }
+      if (!parts.includes(part)) { warnings.push({ code: 'unknownJoint', part }); continue; }
       const rot = vec3(pose?.rot), pos = vec3(pose?.pos);
-      if (part !== 'LowerTorso' && !isZero(pos) && pos.some(v => Math.abs(v) > 0.6)) {
-        warnings.push({ code: 'offsetTooLarge', part, t });
+      if (part !== rig.body && !isZero(pos) && pos.some(v => Math.abs(v) > 0.6)) {
+        warnings.push({ code: 'offsetTooLarge', part, t, body: rig.body });
         for (let i = 0; i < 3; i++) pos[i] = Math.min(0.6, Math.max(-0.6, pos[i]));
       }
       entry.poses[part] = { rot, pos: pos.map(v => round(v, 3)), ease: EASES.includes(pose?.ease) ? pose.ease : 'InOut' };
     }
     for (const [end, goal] of Object.entries(kf?.ik ?? {})) {
-      if (!IK_CHAINS[end]) { warnings.push({ code: 'unknownTarget', part: end }); continue; }
+      if (!rig.ik || !IK_CHAINS[end]) { warnings.push({ code: 'unknownTarget', part: end }); continue; }
       const p = Array.isArray(goal) ? goal : goal?.pos;
       if (!Array.isArray(p) || p.length < 3 || p.some(v => !Number.isFinite(Number(v)))) { warnings.push({ code: 'invalidTarget', part: end, t }); continue; }
       (entry.ik ??= {})[end] = p.slice(0, 3).map(Number);
@@ -57,9 +58,9 @@ export function normalize(input, { literal = false } = {}, rig = RIG_R15) {
   let keyframes = [...byTime.values()].sort((a, b) => a.t - b.t);
   if (!keyframes.length || keyframes[0].t > 0) keyframes.unshift({ t: 0, poses: {} });
   if (keyframes.length < 2) { keyframes.push({ t: 1, poses: {} }); warnings.push({ code: 'noLength' }); }
-  startAtRest(keyframes);
-  if (!literal) unwrapTracks(keyframes);
-  keyframes = expandSpins(keyframes);
+  startAtRest(keyframes, rig);
+  if (!literal) unwrapTracks(keyframes, rig);
+  keyframes = expandSpins(keyframes, rig);
   clampRotations(keyframes, rig, warnings);
   const end = keyframes.at(-1).t;
   const events = (Array.isArray(src.events) ? src.events : [])
@@ -76,15 +77,15 @@ export function normalize(input, { literal = false } = {}, rig = RIG_R15) {
 
 // Every track starts at t=0 so preview and Roblox agree; a joint first keyed later starts at
 // rest. Runs again after IK, which keys arm and leg joints the model did not key itself.
-function startAtRest(keyframes) {
-  for (const part of POSE_PARTS) {
+function startAtRest(keyframes, rig) {
+  for (const part of partsOf(rig)) {
     const first = keyframes.find(k => k.poses[part]);
     if (first && first !== keyframes[0]) keyframes[0].poses[part] = { rot: [0, 0, 0], pos: [0, 0, 0], ease: 'InOut' };
   }
 }
 
-function unwrapTracks(keyframes) {
-  for (const part of POSE_PARTS) {
+function unwrapTracks(keyframes, rig) {
+  for (const part of partsOf(rig)) {
     let prev = null;
     for (const kf of keyframes) {
       const pose = kf.poses[part];
@@ -95,9 +96,9 @@ function unwrapTracks(keyframes) {
   }
 }
 // Copy with continuous angles per joint (a spin reads 0, 120, 240, 360), as shown to models.
-export function forModel(anim) {
+export function forModel(anim, rig = RIG_R15) {
   const copy = structuredClone(anim);
-  unwrapTracks(copy.keyframes);
+  unwrapTracks(copy.keyframes, rig);
   for (const kf of copy.keyframes) for (const pose of Object.values(kf.poses)) pose.rot = pose.rot.map(v => round(v, 2));
   return copy;
 }
@@ -111,9 +112,9 @@ function invEase(ease, f) {
   for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (easeAlpha(ease, mid) < f) lo = mid; else hi = mid; }
   return (lo + hi) / 2;
 }
-function expandSpins(keyframes) {
+function expandSpins(keyframes, rig) {
   const inserts = new Map();
-  for (const part of POSE_PARTS) {
+  for (const part of partsOf(rig)) {
     const keyed = keyframes.filter(k => k.poses[part]);
     for (let i = 0; i + 1 < keyed.length; i++) {
       const a = keyed[i], b = keyed[i + 1], pa = a.poses[part], pb = b.poses[part];
@@ -189,21 +190,21 @@ export function sampleTracks(tracks, t) {
 export const sample = (anim, t) => sampleTracks(buildTracks(anim), t);
 
 // ---------- Ground, IK, motion flow ----------
-// Shift LowerTorso so the lowest foot corner touches y = 0 on every keyframe that is not
+// Shift the body (LowerTorso on R15) so the lowest foot corner touches y = 0 on every keyframe that is not
 // marked contact:"air"; airborne keyframes are only lifted out of the ground.
 export function groundFeet(anim, rig = RIG_R15) {
   const notes = [];
   for (const kf of anim.keyframes) {
     if (kf.locked) continue; // foot-lock in-betweens follow the body path, IK keeps the feet down
     const world = solve(sample(anim, kf.t), rig);
-    const low = lowestY(world, FEET, rig);
+    const low = lowestY(world, rig.feet, rig);
     const delta = kf.contact === 'air' ? Math.max(0, -low) : -low;
     if (Math.abs(delta) < 0.01) continue;
-    if (!kf.poses.LowerTorso) {
-      const s = sample(anim, kf.t).LowerTorso ?? IDENTITY;
-      kf.poses.LowerTorso = { rot: eulerDeg(s.R).map(v => round(v, 2)), pos: s.p.map(v => round(v, 3)), ease: 'InOut' };
+    if (!kf.poses[rig.body]) {
+      const s = sample(anim, kf.t)[rig.body] ?? IDENTITY;
+      kf.poses[rig.body] = { rot: eulerDeg(s.R).map(v => round(v, 2)), pos: s.p.map(v => round(v, 3)), ease: 'InOut' };
     }
-    kf.poses.LowerTorso.pos[1] = round(kf.poses.LowerTorso.pos[1] + delta);
+    kf.poses[rig.body].pos[1] = round(kf.poses[rig.body].pos[1] + delta);
     if (Math.abs(delta) > 0.15) notes.push({ code: 'bodyLowered', t: kf.t, delta });
   }
   return notes;
@@ -221,29 +222,30 @@ function groundBetween(anim, rig = RIG_R15) {
   let count = 0;
   for (let pass = 0; pass < 6; pass++) {
     const tracks = buildTracks(anim);
-    const bodyKeys = anim.keyframes.filter(k => k.poses.LowerTorso);
+    const body = rig.body;
+    const bodyKeys = anim.keyframes.filter(k => k.poses[body]);
     const worst = new Map();
     for (let i = 1; i < Math.round(end * SINK_FPS); i++) {
       const t = round(i / SINK_FPS);
-      const depth = -lowestY(solve(sampleTracks(tracks, t), rig), FEET, rig);
+      const depth = -lowestY(solve(sampleTracks(tracks, t), rig), rig.feet, rig);
       if (depth <= SINK_TOL || bodyKeys.some(k => k.t === t)) continue;
       const before = bodyKeys.findLast(k => k.t < t);
-      if (before && !SPLIT_EASE[before.poses.LowerTorso.ease]) continue; // Constant: a deliberate hold
+      if (before && !SPLIT_EASE[before.poses[body].ease]) continue; // Constant: a deliberate hold
       if (!(worst.get(before)?.depth >= depth)) worst.set(before, { t, depth });
     }
     if (!worst.size) break;
     for (const [before, { t, depth }] of worst) {
-      const s = sampleTracks(tracks, t).LowerTorso ?? IDENTITY;
+      const s = sampleTracks(tracks, t)[body] ?? IDENTITY;
       // A body that was never keyed, or not after this point, first gets keys that keep its path.
-      if (!before) anim.keyframes[0].poses.LowerTorso = bodyPose(sampleTracks(tracks, 0).LowerTorso ?? IDENTITY, 'InOut');
-      if (!bodyKeys.some(k => k.t > t)) anim.keyframes.at(-1).poses.LowerTorso = bodyPose(sampleTracks(tracks, end).LowerTorso ?? IDENTITY, 'InOut');
-      const from = (before ?? anim.keyframes[0]).poses.LowerTorso;
+      if (!before) anim.keyframes[0].poses[body] = bodyPose(sampleTracks(tracks, 0)[body] ?? IDENTITY, 'InOut');
+      if (!bodyKeys.some(k => k.t > t)) anim.keyframes.at(-1).poses[body] = bodyPose(sampleTracks(tracks, end)[body] ?? IDENTITY, 'InOut');
+      const from = (before ?? anim.keyframes[0]).poses[body];
       const [first, second] = SPLIT_EASE[from.ease];
       from.ease = first;
       const kf = anim.keyframes.find(k => k.t === t) ?? { t, poses: {} };
       if (!anim.keyframes.includes(kf)) anim.keyframes.push(kf);
-      kf.poses.LowerTorso = bodyPose(s, second);
-      kf.poses.LowerTorso.pos[1] = round(kf.poses.LowerTorso.pos[1] + depth);
+      kf.poses[body] = bodyPose(s, second);
+      kf.poses[body].pos[1] = round(kf.poses[body].pos[1] + depth);
       count++;
     }
     anim.keyframes.sort((x, y) => x.t - y.t);
@@ -254,10 +256,10 @@ function groundBetween(anim, rig = RIG_R15) {
 // Foot lock: a foot that keeps the same target in two consecutive keyframes gets in-between
 // keyframes so it neither slides nor sinks while the body moves.
 const LOCK_STEP = 0.07;
-function lockFeet(anim) {
+function lockFeet(anim, rig) {
   const kfs = anim.keyframes;
   const inserts = new Map();
-  for (const foot of FEET) {
+  for (const foot of rig.feet) {
     for (let i = 0; i + 1 < kfs.length; i++) {
       const a = kfs[i], b = kfs[i + 1];
       const ta = a.ik?.[foot], tb = b.ik?.[foot];
@@ -286,7 +288,7 @@ const footAt = (anim, foot, t, rig) => solve(sample(anim, t), rig)[foot].p;
 function refineLocks(anim, rig) {
   for (let pass = 0; pass < 4; pass++) {
     const inserts = new Map();
-    for (const foot of FEET) {
+    for (const foot of rig.feet) {
       const keys = anim.keyframes.filter(k => k.ik?.[foot]);
       for (let i = 0; i + 1 < keys.length; i++) {
         const a = keys[i], b = keys[i + 1];
@@ -311,14 +313,14 @@ function refineLocks(anim, rig) {
 // Hands default to body space (they follow hips, jumps and turns), feet to world space.
 function applyIK(anim, keyframes = anim.keyframes, rig = RIG_R15) {
   const notes = [];
-  const restLT = solve({}, rig).LowerTorso;
+  const restBody = solve({}, rig)[rig.body];
   for (const kf of keyframes) {
     if (!kf.ik) continue;
     for (const [end, target] of Object.entries(kf.ik)) {
       const base = sample(anim, kf.t);
       const chain = IK_CHAINS[end];
       const space = kf.ikSpace?.[end] ?? (chain.foot ? 'world' : 'body');
-      const goal = space === 'body' ? point(mul(solve(base, rig).LowerTorso, inv(restLT)), target) : target;
+      const goal = space === 'body' ? point(mul(solve(base, rig)[rig.body], inv(restBody)), target) : target;
       const rot = Object.fromEntries(chain.joints.map(j => [j, kf.poses[j]?.rot ?? (base[j] ? eulerDeg(base[j].R) : [0, 0, 0])]));
       const { rotations, error } = solveChain(end, goal, base, rot, rig);
       const ease = kf.linear?.includes(end) ? 'Linear' : null;
@@ -336,9 +338,9 @@ const stripIK = anim => anim.keyframes.forEach(kf => { delete kf.ik; delete kf.i
 // motion stop at each key (stop-and-go). Where a joint keeps moving in the same direction
 // through a key, neighbouring InOut segments become pass-through easing.
 const FLOW_ROT = 3, FLOW_POS = 0.04;
-export function smoothFlow(anim) {
+export function smoothFlow(anim, rig = RIG_R15) {
   let changed = 0;
-  for (const part of POSE_PARTS) {
+  for (const part of partsOf(rig)) {
     const keys = anim.keyframes.filter(k => k.poses[part]).map(k => k.poses[part]);
     if (keys.length < 3) continue;
     const delta = (a, b) => [...b.rot.map((v, i) => wrap180(v - a.rot[i]) / FLOW_ROT), ...b.pos.map((v, i) => (v - a.pos[i]) / FLOW_POS)];
@@ -358,8 +360,6 @@ export function smoothFlow(anim) {
 }
 
 // ---------- Checks ----------
-const COLLIDERS = ['Head', 'UpperTorso', 'LowerTorso'];
-const PROBES = [['LeftHand', [0, 0, 0]], ['RightHand', [0, 0, 0]], ['LeftLowerArm', [0, -0.35, 0]], ['RightLowerArm', [0, -0.35, 0]]];
 // Limbs turning faster than this read as missing frames; whole-body spins may be faster.
 const POP_SPEED = 1600, POP_SPEED_ROOT = 2400;
 function inside(world, part, p, rig, margin = 0.12) {
@@ -403,13 +403,13 @@ export function inspect(anim, rig = RIG_R15) {
       if (!prev[part]) continue;
       const q1 = quatFromR(prev[part].R), q2 = quatFromR(s.R);
       const speed = 2 * Math.acos(Math.min(1, Math.abs(q1.reduce((sum, v, i) => sum + v * q2[i], 0)))) * 180 / Math.PI * 30;
-      if (speed > (part === 'LowerTorso' ? POP_SPEED_ROOT : POP_SPEED)) once('pop' + part, t, { code: 'pop', t: tt, part, speed: Math.round(speed) });
+      if (speed > (part === rig.body ? POP_SPEED_ROOT : POP_SPEED)) once('pop' + part, t, { code: 'pop', t: tt, part, speed: Math.round(speed) });
     }
     prev = local;
     const world = solve(local, rig);
-    const low = lowestY(world, FEET, rig);
+    const low = lowestY(world, rig.feet, rig);
     if (low < -0.25) once('sink', t, { code: 'footInGround', t: tt, depth: -low });
-    for (const [probe, at] of PROBES) for (const body of COLLIDERS) {
+    for (const [probe, at] of rig.probes) for (const body of rig.colliders) {
       if (inside(world, body, point(world[probe], at), rig)) once(probe + body, t, { code: 'limbInBody', t: tt, part: probe, body });
     }
   }
@@ -418,11 +418,10 @@ export function inspect(anim, rig = RIG_R15) {
 }
 
 // Where head, hands and feet really end up per keyframe, as feedback for the model.
-const MEASURED = ['Head', 'LeftHand', 'RightHand', 'LeftFoot', 'RightFoot'];
 export function measure(anim, rig = RIG_R15) {
   return anim.keyframes.map(kf => {
     const world = solve(sample(anim, kf.t), rig);
-    return `t=${kf.t}: ` + MEASURED.map(p => `${p} [${world[p].p.map(v => round(v, 2)).join(', ')}]`).join(', ');
+    return `t=${kf.t}: ` + rig.measured.map(([label, part, at]) => `${label} [${point(world[part], at).map(v => round(v, 2)).join(', ')}]`).join(', ');
   }).join('\n');
 }
 
@@ -433,15 +432,15 @@ export function measure(anim, rig = RIG_R15) {
 export function prepare(input, { ground = true, literal = false } = {}, rig = RIG_R15) {
   const { anim, warnings } = normalize(input, { literal }, rig);
   const hasIK = anim.keyframes.some(k => k.ik);
-  if (hasIK) lockFeet(anim);
+  if (hasIK) lockFeet(anim, rig);
   let ikNotes = hasIK ? applyIK(anim, anim.keyframes, rig) : [];
-  if (hasIK) startAtRest(anim.keyframes);
+  if (hasIK) startAtRest(anim.keyframes, rig);
   let fixes = ground ? groundFeet(anim, rig) : [];
   if (hasIK) {
     ikNotes = applyIK(anim, anim.keyframes, rig);
     if (ground) fixes = groundFeet(anim, rig);
   }
-  const flow = literal ? smoothFlow(anim) : 0;
+  const flow = literal ? smoothFlow(anim, rig) : 0;
   if (flow) fixes = [...fixes, { code: 'flowSmoothed', count: flow }];
   if (hasIK) {
     if (flow) applyIK(anim, anim.keyframes.filter(k => k.locked), rig);
@@ -498,6 +497,7 @@ function keyAt(anim, kf, part) {
   return (kf.poses[part] = bodyPose(s, second));
 }
 export function retarget(input, from, to) {
+  if ((from.family ?? 'R15') !== (to.family ?? 'R15')) throw Object.assign(new Error(`A clip can't be moved between ${from.family} and ${to.family}; make a new clip instead.`), { status: 400 });
   const s = to.hipHeight / from.hipHeight;
   const anim = structuredClone(input);
   const src = buildTracks(input);
@@ -506,9 +506,9 @@ export function retarget(input, from, to) {
   for (const kf of anim.keyframes) {
     delete kf.contact;
     const world = solve(sampleTracks(src, kf.t), from);
-    if (lowestY(world, FEET, from) > FLAT) kf.contact = 'air';
+    if (lowestY(world, from.feet, from) > FLAT) kf.contact = 'air';
     const starts = {};
-    for (const foot of FEET) {
+    for (const foot of to.ik ? from.feet : []) {
       const p = world[foot].p;
       if (p[1] - from.parts[foot][1] / 2 > FLAT) { open[foot] = null; continue; }
       const o = open[foot];
@@ -516,7 +516,7 @@ export function retarget(input, from, to) {
       starts[foot] = open[foot].kf;
     }
     plantStart.set(kf, starts);
-    const lt = kf.poses.LowerTorso;
+    const lt = kf.poses[from.body];
     if (lt) lt.pos = lt.pos.map(v => round(v * s));
   }
   // Ground every keyframe on the new body, then hold each planted foot where it stood on the
@@ -524,10 +524,10 @@ export function retarget(input, from, to) {
   const fixes = [], anchors = new Map();
   let corrected = 0;
   for (const kf of anim.keyframes) {
-    const low = lowestY(solve(sample(anim, kf.t), to), FEET, to);
+    const low = lowestY(solve(sample(anim, kf.t), to), to.feet, to);
     const delta = kf.contact === 'air' ? Math.max(0, -low) : -low;
     if (Math.abs(delta) >= 0.01) {
-      const lt = keyAt(anim, kf, 'LowerTorso');
+      const lt = keyAt(anim, kf, to.body);
       lt.pos[1] = round(lt.pos[1] + delta);
       if (Math.abs(delta) > 0.15) fixes.push({ code: 'bodyLowered', t: kf.t, delta });
     }
@@ -562,11 +562,12 @@ export function fromStudio(data, rig = RIG_R15) {
   for (const kf of data.keyframes ?? []) {
     const poses = {};
     for (const [name, weight, c, style, dir] of kf.poses ?? []) {
-      if (!POSE_PARTS.includes(name) || weight <= 0) continue;
+      if (!partsOf(rig).includes(name) || weight <= 0) continue;
       if (style === 'Constant' && dir === 'In') notes.push({ code: 'importConstantIn', part: name, t: kf.t });
       const map = IMPORT_EASE[style];
       if (!map) notes.push({ code: 'importEasing', part: name, t: kf.t, style });
-      poses[name] = { rot: eulerDeg(c.slice(3, 12)).map(v => round(v, 2)), pos: c.slice(0, 3).map(v => round(v, 3)), ease: map ? map(dir) : 'InOut' };
+      const pose = fromJointFrame(rig, name, { p: c.slice(0, 3), R: c.slice(3, 12) });
+      poses[name] = { rot: eulerDeg(pose.R).map(v => round(v, 2)), pos: pose.p.map(v => round(v, 3)), ease: map ? map(dir) : 'InOut' };
     }
     for (const [name, value] of kf.markers ?? []) events.push({ t: kf.t, name, value });
     if (Object.keys(poses).length || !(kf.markers ?? []).length) keyframes.push({ t: kf.t, poses });
@@ -576,37 +577,52 @@ export function fromStudio(data, rig = RIG_R15) {
 }
 
 // ---------- Export ----------
-const PARENT = Object.fromEntries(RIG_R15.joints.map(j => [j.part1, j.part0]));
+// R6 joints have their own frame Q (see RIG_R6 in rig.js): Transform = Qᵀ · pose · Q.
+const frameOf = (rig, part) => rig.joints.find(j => j.part1 === part)?.frame;
+const transpose = R => [R[0], R[3], R[6], R[1], R[4], R[7], R[2], R[5], R[8]];
+export function toJointFrame(rig, part, c) {
+  const Q = frameOf(rig, part);
+  if (!Q) return c;
+  const Qt = transpose(Q);
+  return { p: rotV(Qt, c.p), R: mulR(mulR(Qt, c.R), Q) };
+}
+export function fromJointFrame(rig, part, c) {
+  const Q = frameOf(rig, part);
+  if (!Q) return c;
+  return { p: rotV(Q, c.p), R: mulR(mulR(Q, c.R), transpose(Q)) };
+}
 const EXPORT_EASE = { Linear: ['Linear', 'In'], Constant: ['Constant', 'Out'], In: ['CubicV2', 'In'], Out: ['CubicV2', 'Out'], InOut: ['CubicV2', 'InOut'] };
 const STYLE_TOKEN = { Linear: 0, Constant: 1, Elastic: 2, Cubic: 3, Bounce: 4, CubicV2: 5 };
 const DIR_TOKEN = { In: 0, Out: 1, InOut: 2 };
 const num = v => String(round(v, 5));
 
 // Keyframe pose trees: keyed poses Weight 1, structural ancestors Weight 0 (like the Animation Editor).
-export function exportTree(anim) {
+export function exportTree(anim, rig = RIG_R15) {
+  const parent = Object.fromEntries(rig.joints.map(j => [j.part1, j.part0]));
   return anim.keyframes.map(kf => {
     const nodes = new Map();
     const node = part => {
       if (nodes.has(part)) return nodes.get(part);
       const n = { part, weight: 0, cframe: IDENTITY, style: 'Linear', dir: 'In', children: [] };
       nodes.set(part, n);
-      if (PARENT[part]) node(PARENT[part]).children.push(n);
+      if (parent[part]) node(parent[part]).children.push(n);
       return n;
     };
-    for (const part of POSE_PARTS) {
+    for (const part of partsOf(rig)) {
       const pose = kf.poses[part];
       if (!pose) continue;
       const [style, dir] = EXPORT_EASE[pose.ease] ?? EXPORT_EASE.InOut;
-      Object.assign(node(part), { weight: 1, cframe: cf(pose.pos, anglesDeg(pose.rot)), style, dir });
+      Object.assign(node(part), { weight: 1, cframe: toJointFrame(rig, part, cf(pose.pos, anglesDeg(pose.rot))), style, dir });
     }
-    return { t: kf.t, root: nodes.get(RIG_R15.root) ?? null, markers: anim.events.filter(e => Math.abs(e.t - kf.t) < 1e-6) };
+    return { t: kf.t, root: nodes.get(rig.root) ?? null, markers: anim.events.filter(e => Math.abs(e.t - kf.t) < 1e-6) };
   });
 }
 
 const xml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // One or several clips as a Roblox model file; Studio's "Insert from File" adds them all.
-export function toRbxmx(anims) {
-  const list = Array.isArray(anims) ? anims : [anims];
+// items: clips, or { anim, rig } for clips made for another body.
+export function toRbxmx(items) {
+  const list = (Array.isArray(items) ? items : [items]).map(x => (x.keyframes ? { anim: x, rig: RIG_R15 } : x));
   const lines = ['<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">'];
   let ref = 0;
   const pose = (n, ind) => {
@@ -619,10 +635,10 @@ export function toRbxmx(anims) {
     lines.push(`${ind}</Item>`);
   };
   const marker = m => `<Item class="KeyframeMarker" referent="RBX${ref++}"><Properties><string name="Name">${xml(m.name)}</string><string name="Value">${xml(m.value)}</string></Properties></Item>`;
-  for (const anim of list) {
+  for (const { anim, rig } of list) {
     const events = [...anim.events];
     lines.push(`<Item class="KeyframeSequence" referent="RBX${ref++}"><Properties><string name="Name">${xml(cleanName(anim.name))}</string><bool name="Loop">${anim.loop === true}</bool><token name="Priority">${PRIORITIES[priorityOf(anim.priority)]}</token></Properties>`);
-    for (const kf of exportTree(anim)) {
+    for (const kf of exportTree(anim, rig)) {
       lines.push(` <Item class="Keyframe" referent="RBX${ref++}"><Properties><string name="Name">Keyframe</string><float name="Time">${num(kf.t)}</float></Properties>`);
       if (kf.root) pose(kf.root, '  ');
       for (const m of kf.markers) { events.splice(events.indexOf(m), 1); lines.push(`  ${marker(m)}`); }
@@ -641,8 +657,8 @@ export function toRbxmx(anims) {
 export const luaStr = s => `"${[...new TextEncoder().encode(String(s))]
   .map(b => (b >= 0x20 && b < 0x7f && b !== 0x22 && b !== 0x5c ? String.fromCharCode(b) : `\\${String(b).padStart(3, '0')}`)).join('')}"`;
 // Luau chunk that returns a fresh KeyframeSequence (Command Bar, MCP execute_luau).
-export function toLuauBuilder(anim) {
-  const kfs = exportTree(anim).map(kf => {
+export function toLuauBuilder(anim, rig = RIG_R15) {
+  const kfs = exportTree(anim, rig).map(kf => {
     const poseLua = n => `{${luaStr(n.part)},${n.weight},{${[...n.cframe.p, ...n.cframe.R].map(num).join(',')}},${luaStr(n.style)},${luaStr(n.dir)},{${n.children.map(poseLua).join(',')}}}`;
     return `{${num(kf.t)},${kf.root ? poseLua(kf.root) : 'nil'}}`;
   });

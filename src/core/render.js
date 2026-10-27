@@ -100,8 +100,9 @@ function drawCell(cv, ox, oy, w, h, world, cam, scale, center, rig) {
   const quad = (p, color, bias) => { tri(p[0], p[1], p[2], color, bias); tri(p[0], p[2], p[3], color, bias); };
   const g = 7;
   quad([[-g, 0, -g], [g, 0, -g], [g, 0, g], [-g, 0, g]].map(proj), GROUND, 0.02);
-  const parts = Object.entries(rig.parts).filter(([n]) => n !== rig.root).map(([n, size]) => ({ cf: world[n], size, color: colorOf(n) }));
-  const face = FACE.map(f => ({ cf: { p: point(world[f.part], f.center), R: world[f.part].R }, size: f.size, color: COLORS.face }));
+  const parts = Object.entries(rig.parts).filter(([n]) => n !== rig.root).map(([n, size]) => ({ cf: world[n], size: rig.display?.[n] ?? size, color: colorOf(n) }));
+  const front = -((rig.display?.Head ?? rig.parts.Head)[2] / 2 + 0.005); // eyes and mouth sit on the head's front face
+  const face = FACE.map(f => ({ cf: { p: point(world[f.part], [f.center[0], f.center[1], front]), R: world[f.part].R }, size: f.size, color: COLORS.face }));
   for (const b of parts) {
     const c = boxCorners(b.cf, b.size).map(v => [v[0], 0.001, v[2]]).map(proj);
     for (const [i, j, k, l] of BOX_FACES) quad([c[i], c[j], c[k], c[l]], SHADOW, 0.01);

@@ -62,7 +62,7 @@ export function createRig(scene, rig = RIG_R15) {
   const meshes = {};
   for (const [name, size] of Object.entries(rig.parts)) {
     if (name === rig.root) continue;
-    const geo = new THREE.BoxGeometry(...size);
+    const geo = new THREE.BoxGeometry(...(rig.display?.[name] ?? size));
     const base = new THREE.MeshStandardMaterial({ color: COLORS[REGION(name)], roughness: 0.7 });
     const mat = name === 'Head' ? [base, base, base, base, base, new THREE.MeshStandardMaterial({ map: FACE, roughness: 0.7 })] : base;
     const mesh = new THREE.Mesh(geo, mat);

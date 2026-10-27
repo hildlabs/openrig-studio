@@ -46,6 +46,14 @@ The preview samples clips the way Roblox does. These rules were measured in Robl
 
 Part sizes and joint offsets (`src/core/rig.js`) come from the attachments of Studio's default R15 rig: `Part1.CFrame = Part0.CFrame * C0 * Transform * C1:Inverse()`. The default rig's C0/C1 are pure translations; imported rigs may carry rotations (`c0R`, `c1R`). The rest pose stands with the soles at y = 0. Every function that works on a body takes the rig as a parameter; models always work on the default one.
 
+## R6 (`RIG_R6` in `src/core/rig.js`)
+
+The classic R6 body was read from Studio: six parts, Motor6Ds whose C0 and C1 carry the same rotation Q (RootJoint and Neck swap y and z, shoulders and hips turn 90° about y). Because Q is the same on both sides, the rig is kept in the R15 axes with pure translations, and a pose means the same as on R15 (x+ swings an arm forward). Only at the Roblox boundary is it turned into the joint's own frame: `Transform = Qᵀ · pose · Q` on export, `pose = Q · Transform · Qᵀ` on import. Moving the body up 0.8 studs is therefore a Torso Pose of (0, 0, 0.8) in Roblox.
+
+Checked in Studio: a test clip with every joint turned, the body moved and Linear/Out easing places every part within 0.0001 studs of Roblox's playback, orientation included (`test/r6.test.js` keeps the values). Roblox reports a HipHeight of 0 for R6; here the legs (2 studs) count as hip height, and the R6 model pivots around its head, so the preview rig in Studio is placed by its root part. The head part is 2 × 1 × 1, but the preview draws it at the size of its visible mesh (1.25).
+
+R6 has no IK (one-piece limbs), so the pipeline skips foot targets; grounding uses the corners of the legs. The model gets its own system prompt (`prompts/system-r6.md`) with rendered poses.
+
 ## Other proportions (`retarget` in `src/core/anim.js`)
 
 A clip can be made for an imported rig (`data/rigs`, read from the rig selected in Studio: part sizes, Motor6D or AnimationConstraint offsets, HumanoidDescription). Moving a clip to another rig:
