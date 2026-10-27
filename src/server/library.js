@@ -2,8 +2,9 @@
 // A clip keeps its history (generated, draft, edited, imported, restored) instead of version numbers.
 import path from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { ROOT, DATA } from './settings.js';
+import { writeJson, moveFile } from './files.js';
 import { prepare, restClip, cleanName } from '../core/anim.js';
 
 const CLIPS = path.join(DATA, 'clips');
@@ -17,12 +18,6 @@ const clipPath = id => {
   if (!/^[a-z0-9-]+$/.test(id)) throw Object.assign(new Error('Invalid clip id.'), { status: 400 });
   return path.join(CLIPS, `${id}.json`);
 };
-async function writeJson(file, data) {
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file + '.tmp', JSON.stringify(data, null, 1), 'utf8');
-  await rename(file + '.tmp', file);
-}
-
 export async function loadClip(id) {
   try { return JSON.parse(await readFile(clipPath(id), 'utf8')); }
   catch (e) { if (e.status) throw e; throw Object.assign(new Error('Clip not found.'), { status: 404 }); }
@@ -36,7 +31,7 @@ export async function saveClip(clip) {
 // kind: created | generated | draft | edited | imported | restored | retargeted
 export function addEntry(clip, result, kind, label = '') {
   const id = (clip.history.at(-1)?.id ?? 0) + 1;
-  clip.history.push({ id, at: now(), kind, label, anim: result.anim, warnings: result.warnings ?? [], fixes: result.fixes ?? [], issues: result.issues ?? [] });
+  clip.history.push({ id, at: now(), kind, label, rig: clip.rig ?? '', anim: result.anim, warnings: result.warnings ?? [], fixes: result.fixes ?? [], issues: result.issues ?? [] });
   clip.anim = result.anim;
   clip.current = id;
   return id;
@@ -61,7 +56,7 @@ export async function listClips() {
       out.push({
         id: c.id, name: c.name, folder: c.folder ?? '', starred: Boolean(c.starred), createdAt: c.createdAt, updatedAt: c.updatedAt,
         duration: c.anim.keyframes.at(-1).t, loop: c.anim.loop, keyframes: c.anim.keyframes.length,
-        model: gen?.label ?? '', issues: (c.history.find(h => h.id === c.current)?.issues ?? []).length,
+        model: gen?.label ?? c.chat?.findLast(m => m.engine)?.engine ?? '', rig: c.rig ?? '', issues: (c.history.find(h => h.id === c.current)?.issues ?? []).length,
       });
     } catch { /* skip unreadable files */ }
   }
@@ -80,13 +75,14 @@ export async function duplicateClip(id) {
   const src = await loadClip(id);
   const copy = await createClip(`${src.name} copy`, src.folder);
   copy.history = [];
+  if (src.rig) copy.rig = src.rig;
   addEntry(copy, { anim: { ...structuredClone(src.anim), name: copy.name } }, 'created', src.name);
   return saveClip(copy);
 }
 
 export async function trashClip(id) {
   await mkdir(TRASH, { recursive: true });
-  await rename(clipPath(id), path.join(TRASH, `${id}-${Date.now()}.json`));
+  await moveFile(clipPath(id), path.join(TRASH, `${id}-${Date.now()}.json`));
 }
 
 // Bundled examples (examples/*.json) are copied into the library once, into the folder

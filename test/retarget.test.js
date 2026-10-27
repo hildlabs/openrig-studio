@@ -5,7 +5,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { RIG_R15, solve, lowestY, quatFromR } from '../src/core/rig.js';
-import { retarget, FEET, buildTracks, sampleTracks, duration } from '../src/core/anim.js';
+import { retarget, prepare, FEET, buildTracks, sampleTracks, duration } from '../src/core/anim.js';
 import { motionStats } from '../src/core/metrics.js';
 
 const example = name => JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'examples', `${name}.json`), 'utf8')).anim;
@@ -105,4 +105,14 @@ test('joints with rotated attachments solve like Roblox (Part0 * C0 * T * C1⁻�
   const want = mul(mul(mul(w.UpperTorso, cf(j.c0, j.c0R)), T.LeftUpperArm), inv(cf(j.c1, j.c1R)));
   assert.ok(Math.hypot(...want.p.map((v, i) => v - w.LeftUpperArm.p[i])) < 1e-9);
   assert.ok(checkRig(fromStudio(RIG_R15)).joints.every(x => !x.c0R && !x.c1R), 'identity rotations are dropped');
+});
+
+test('a retargeted jump stays in the air when it is saved again', () => {
+  // Saving runs prepare() with grounding, which pulls every keyframe not marked "air" down.
+  const rig = RIGS.bigger;
+  const moved = retarget(example('jump'), RIG_R15, rig).anim;
+  assert.ok(moved.keyframes.some(k => k.contact === 'air'), 'air keys are kept');
+  const saved = prepare(moved, {}, rig).anim;
+  const air = a => motionStats(a, rig).airTime;
+  assert.ok(Math.abs(air(saved) - air(moved)) <= 0.05, `airtime ${air(moved)} → ${air(saved)} after saving`);
 });

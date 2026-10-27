@@ -5,7 +5,8 @@
 const TIMEOUT_MS = 20 * 60 * 1000;
 
 export const baseUrl = url => String(url ?? '').trim().replace(/\/+$/, '');
-export const models = list => String(list ?? '').split(',').map(x => x.trim()).filter(Boolean).map(id => ({ id, label: id, efforts: [] }));
+// reasoning_effort is offered but only sent when chosen (the editor defaults to the server's own).
+export const models = list => String(list ?? '').split(',').map(x => x.trim()).filter(Boolean).map(id => ({ id, label: id, efforts: ['low', 'medium', 'high'] }));
 
 function endpoint(url, route) {
   const base = baseUrl(url);
@@ -29,23 +30,32 @@ export const stripThinking = text => text.replace(/<think>[\s\S]*?<\/think>/g, '
 export async function readStream(body) {
   let text = '', usage = null, finish = null, rest = '';
   const decoder = new TextDecoder();
+  const line = l => {
+    const data = l.match(/^data:\s?(.*)$/)?.[1];
+    if (!data || data === '[DONE]') return;
+    let event;
+    try { event = JSON.parse(data); } catch { return; }
+    if (event.error) throw new Error(`API error: ${event.error.message ?? JSON.stringify(event.error)}`);
+    const choice = event.choices?.[0];
+    if (choice?.delta?.content) text += choice.delta.content;
+    if (choice?.finish_reason) finish = choice.finish_reason;
+    if (event.usage) usage = event.usage;
+  };
   for await (const chunk of body) {
     rest += decoder.decode(chunk, { stream: true });
     const lines = rest.split(/\r?\n/);
     rest = lines.pop();
-    for (const line of lines) {
-      const data = line.match(/^data:\s?(.*)$/)?.[1];
-      if (!data || data === '[DONE]') continue;
-      let event;
-      try { event = JSON.parse(data); } catch { continue; }
-      if (event.error) throw new Error(`API error: ${event.error.message ?? JSON.stringify(event.error)}`);
-      const choice = event.choices?.[0];
-      if (choice?.delta?.content) text += choice.delta.content;
-      if (choice?.finish_reason) finish = choice.finish_reason;
-      if (event.usage) usage = event.usage;
-    }
+    lines.forEach(line);
   }
+  line(rest + decoder.decode()); // a last event without a line break
   return { text, usage, finish };
+}
+// Servers that ignore "stream": true answer with one chat.completion object instead.
+async function readWhole(res) {
+  const body = await res.json();
+  if (body.error) throw new Error(`API error: ${body.error.message ?? JSON.stringify(body.error)}`);
+  const choice = body.choices?.[0];
+  return { text: choice?.message?.content ?? '', usage: body.usage ?? null, finish: choice?.finish_reason ?? null };
 }
 
 export async function runCompatible({ url, key, maxTokens }, { model, effort, system, text, images = [] }) {
@@ -67,7 +77,8 @@ export async function runCompatible({ url, key, maxTokens }, { model, effort, sy
     }),
   });
   if (!res.ok) throw await failure(res);
-  const { text: answer, usage: u, finish } = await readStream(res.body);
+  const streamed = !(res.headers.get('content-type') ?? '').includes('application/json');
+  const { text: answer, usage: u, finish } = streamed ? await readStream(res.body) : await readWhole(res);
   if (finish === 'length') throw new Error('The answer was cut off by the model\'s output limit. Raise "Max output tokens" for the OpenAI-compatible API in Settings (most animations need 8,000 to 20,000, thinking models more). With Ollama, also raise its context length, e.g. OLLAMA_CONTEXT_LENGTH=32768.');
   const cached = u?.prompt_tokens_details?.cached_tokens ?? u?.prompt_cache_hit_tokens ?? 0;
   return {
@@ -76,10 +87,11 @@ export async function runCompatible({ url, key, maxTokens }, { model, effort, sy
   };
 }
 
-// Connection check: most servers list their models; some don't, which is fine.
+// Connection check through the model list, which nearly every server has. A 404 there almost
+// always means a wrong base URL (most end in /v1), so it is reported as one.
 export async function testCompatible({ url, key }) {
   const res = await fetch(endpoint(url, '/models'), { headers: headers(key), signal: AbortSignal.timeout(20000) });
-  if (res.status === 404) return 'Connected (the server has no model list)';
+  if (res.status === 404) throw new Error(`The server answered, but ${baseUrl(url)}/models doesn't exist. Check the base URL: most end in /v1.`);
   if (!res.ok) throw await failure(res);
   const list = (await res.json()).data ?? [];
   return `${list.length} models available`;

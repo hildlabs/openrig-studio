@@ -3,12 +3,14 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { loadSettings } from './settings.js';
+import { readFileSync } from 'node:fs';
+import { ROOT, loadSettings } from './settings.js';
 import { firstExisting, newestIn } from './process.js';
 import { toLuauBuilder, luaStr } from '../core/anim.js';
 import { RIG_R15 } from '../core/rig.js';
 
 export const RIG_NAME = 'OpenRigPreview';
+const VERSION = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 
 export async function findStudioMcp() {
   const s = await loadSettings();
@@ -50,7 +52,7 @@ async function session(fn) {
     return text;
   };
   try {
-    await request('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'openrig-studio', version: '0.1.0' } }, 15000);
+    await request('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'openrig-studio', version: VERSION } }, 15000);
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
     await sleep(1200); // Studio registers with a fresh proxy asynchronously
     const studios = async () => { try { return JSON.parse(await call('list_roblox_studios')).studios ?? []; } catch { return []; } };
@@ -173,7 +175,7 @@ return string.format("%.1f s", total)`;
 }
 // Plays on the local player's avatar in a running playtest (client side, replicates).
 function playtestLuau(anim, rig = RIG_R15) {
-  const family = rig.family ?? 'R15', other = family === 'R6' ? 'R15' : 'R6';
+  const family = rig.family === 'R6' ? 'R6' : 'R15', other = family === 'R6' ? 'R15' : 'R6';
   return `local player = game:GetService("Players").LocalPlayer
 local char = player.Character or player.CharacterAdded:Wait()
 local hum = char:WaitForChild("Humanoid", 10)

@@ -75,7 +75,7 @@ function renderSetup() {
     const key = `${p.id}:${m.id}`;
     const prev = saved?.[key];
     const on = prev ? prev.on : DEFAULT_RUNS.includes(key);
-    const effort = prev?.effort ?? (m.efforts.includes('high') ? 'high' : '');
+    const effort = prev?.effort ?? (p.id !== 'compatible' && m.efforts.includes('high') ? 'high' : '');
     return `<div class="row${p.available ? '' : ' off'}"><label class="check"><input type="checkbox" data-key="${esc(key)}" ${on && p.available ? 'checked' : ''} ${p.available ? '' : 'disabled'}>${esc(m.label)}</label>
       <select data-effort="${esc(key)}" ${p.available ? '' : 'disabled'}><option value="">${t('engine.default')}</option>${m.efforts.map(e => `<option${e === effort ? ' selected' : ''}>${esc(e)}</option>`).join('')}</select></div>`;
   }).join('')).join('');
@@ -132,7 +132,9 @@ function renderGrid() {
   const grid = $('#cmpGrid', root);
   multi.clear();
   grid.classList.toggle('frames-mode', C.mode === 'frames');
-  for (const id of ['#cmpPlay', '#cmpScrub', '#cmpTime']) $(id, root).classList.toggle('hidden', C.mode === 'frames');
+  // Transport and view switch only mean something once there is a comparison to play.
+  for (const id of ['#cmpPlay', '#cmpScrub', '#cmpTime']) $(id, root).classList.toggle('hidden', C.mode === 'frames' || !C.record);
+  $('.cmp-bar .seg', root).classList.toggle('hidden', !C.record);
   for (const b of $$('[data-mode]', root)) b.setAttribute('aria-pressed', String(b.dataset.mode === C.mode));
   if (!C.record) { grid.innerHTML = `<div class="cmp-empty" style="grid-column:1/-1"><h2>${t('cmp.empty')}</h2><p>${t('cmp.emptyBody')}</p></div>`; return; }
   grid.innerHTML = C.record.items.map((it, i) => {

@@ -68,18 +68,27 @@ test('a cut-off answer and a rejected key give clear errors', async () => {
   await assert.rejects(runCompatible({ url: 'api.deepseek.com', key: 'k' }, request), /base URL/);
 });
 
-test('connection check lists models and accepts servers without a model list', async () => {
+test('connection check lists models and calls a missing model list a wrong base URL', async () => {
   reply = () => ({ type: 'application/json', body: JSON.stringify({ data: [{ id: 'a' }, { id: 'b' }] }) });
   assert.equal(await testCompatible({ url, key: 'k' }), '2 models available');
   assert.equal(last.path, '/v1/models');
   reply = () => ({ status: 404, type: 'text/plain', body: 'not found' });
-  assert.match(await testCompatible({ url, key: 'k' }), /Connected/);
+  await assert.rejects(testCompatible({ url, key: 'k' }), /Check the base URL: most end in \/v1/);
 });
 
 test('settings helpers', () => {
   assert.equal(baseUrl(' https://api.deepseek.com/v1// '), 'https://api.deepseek.com/v1');
   assert.deepEqual(models('deepseek-chat, qwen3:32b,,'), [
-    { id: 'deepseek-chat', label: 'deepseek-chat', efforts: [] },
-    { id: 'qwen3:32b', label: 'qwen3:32b', efforts: [] },
+    { id: 'deepseek-chat', label: 'deepseek-chat', efforts: ['low', 'medium', 'high'] },
+    { id: 'qwen3:32b', label: 'qwen3:32b', efforts: ['low', 'medium', 'high'] },
   ]);
+});
+
+test('the last event counts without a line break, and servers that ignore streaming work too', async () => {
+  reply = () => ({ body: `data: ${JSON.stringify(delta('{"keyframes": []}'))}\n\ndata: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }] })}` });
+  await assert.rejects(runCompatible({ url, key: 'k' }, request), /cut off/, 'finish_reason in the last line without a newline is seen');
+  reply = () => ({ type: 'application/json', body: JSON.stringify({ choices: [{ message: { content: 'plain answer' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5 } }) });
+  const out = await runCompatible({ url, key: 'k' }, request);
+  assert.equal(out.text, 'plain answer');
+  assert.equal(out.usage.output, 5);
 });

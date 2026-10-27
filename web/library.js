@@ -83,7 +83,7 @@ function renderTable() {
       <td><input type="checkbox" data-sel ${L.selected.has(c.id) ? 'checked' : ''} aria-label="${esc(c.name)}"></td>
       <td><img class="strip" loading="lazy" alt="" src="/api/clips/${c.id}/strip.png?u=${encodeURIComponent(c.updatedAt)}"></td>
       <td>${L.editing === c.id ? `<span class="clip-name"><input type="text" data-rename value="${esc(c.name)}"></span>` : `<div class="clip-name">${esc(c.name)}</div>`}
-        <div class="clip-sub num">${c.keyframes} keys${c.loop ? ` · ${t('clip.loop')}` : ''}${c.issues ? ` <span class="badge warn">${t('history.findings', { n: c.issues })}</span>` : ''}</div></td>
+        <div class="clip-sub num">${t('clip.keys', { n: c.keyframes })}${c.loop ? ` · ${t('clip.loop')}` : ''}${c.rigName ? ` <span class="badge">${esc(c.rigName)}</span>` : ''}${c.issues ? ` <span class="badge warn">${t('history.findings', { n: c.issues })}</span>` : ''}</div></td>
       <td>${c.folder ? `<span class="badge">${esc(c.folder)}</span>` : ''}</td>
       <td class="num">${c.duration.toFixed(2)} s</td>
       <td class="clip-sub">${esc(c.model)}</td>
