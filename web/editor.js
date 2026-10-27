@@ -7,6 +7,7 @@ import { Viewer } from './stage.js';
 import { RIG_R15, POSE_PARTS, REGION, eulerDeg } from '/core/rig.js';
 import { buildTracks, sampleTracks, EASES } from '/core/anim.js';
 import { formatIssue } from '/core/messages.js';
+import { createUndo } from './undo.js';
 
 const FPS = 60;
 const snap = v => Math.round(Math.max(0, v) * FPS) / FPS;
@@ -19,6 +20,7 @@ const GROUPS = [
 const REGION_COLOR = { arms: 'var(--arms)', head: 'var(--arms)', torso: 'var(--torso)', legs: 'var(--legs)' };
 const S = { clip: null, anim: null, tracks: null, dirty: false, t: 0, playing: false, speed: 1, loop: true, part: null, job: null, lower: prefs.get('lower', 'dope'), inspKey: '' };
 let root, viewer, lastFrame = performance.now(), scrubbing = false, sheetMeta = null;
+const undo = createUndo();
 const dur = () => S.anim?.keyframes.at(-1).t ?? 1;
 const kfAt = tt => S.anim.keyframes.findIndex(k => Math.abs(k.t - tt) < 0.0005);
 
@@ -50,6 +52,8 @@ export function mount(el) {
         <input class="name" id="clipName" spellcheck="false" aria-label="Name">
         <span class="meta num" id="clipMeta"></span>
         <span class="grow"></span>
+        <button class="btn icon quiet" id="undoBtn" disabled></button>
+        <button class="btn icon quiet" id="redoBtn" disabled></button>
         <button class="btn" id="exportBtn"></button>
         <button class="btn" id="studioBtn"></button>
         <button class="btn icon" id="newBtn"></button>
@@ -93,6 +97,8 @@ export function relabel() {
   $('#studioBtn', root).innerHTML = `${icon('studio')}${t('actions.studio')}${icon('chevron')}`;
   $('#newBtn', root).innerHTML = icon('plus');
   $('#newBtn', root).title = t('lib.new');
+  $('#undoBtn', root).innerHTML = icon('undo'); $('#undoBtn', root).title = t('actions.undo');
+  $('#redoBtn', root).innerHTML = icon('redo'); $('#redoBtn', root).title = t('actions.redo');
   $('#tStart', root).innerHTML = icon('start'); $('#tStart', root).title = t('transport.start');
   $('#tEnd', root).innerHTML = icon('end'); $('#tEnd', root).title = t('transport.end');
   $('#tLoop', root).innerHTML = icon('loop'); $('#tLoop', root).title = t('transport.loop');
@@ -116,7 +122,8 @@ export async function open(id) {
   if (S.dirty && S.clip?.id !== id) await save();
   setClip(await api(`/api/clips/${id}`));
 }
-function setClip(clip, { keepTime = false } = {}) {
+function setClip(clip, { keepTime = false, keepUndo = false } = {}) {
+  if (!keepUndo || S.clip?.id !== clip.id) undo.clear();
   S.clip = clip;
   S.anim = structuredClone(clip.anim);
   S.tracks = buildTracks(S.anim);
@@ -129,6 +136,7 @@ function setClip(clip, { keepTime = false } = {}) {
   renderChat();
   renderLower();
   renderInspector();
+  renderUndo();
   viewer.rig.highlight(S.part);
 }
 
@@ -219,7 +227,7 @@ async function generate(mode) {
     $('#prompt', root).value = '';
     S.job = jobId;
     setBusy(true, t('job.start'));
-    setClip(await api(`/api/clips/${S.clip.id}`), { keepTime: true });
+    setClip(await api(`/api/clips/${S.clip.id}`), { keepTime: true, keepUndo: true });
     poll(jobId, S.clip.id);
   } catch (e) { toast(e.message, true); }
 }
@@ -235,7 +243,7 @@ function poll(jobId, clipId) {
       setBusy(false);
       if (S.clip?.id !== clipId) return;
       if (job.status === 'done') { setClip(job.clip); setPlaying(true); }
-      else { toast(job.error, true); setClip(await api(`/api/clips/${clipId}`), { keepTime: true }); }
+      else { toast(job.error, true); setClip(await api(`/api/clips/${clipId}`), { keepTime: true, keepUndo: true }); }
     } catch (e) { clearInterval(timer); S.job = null; setBusy(false); toast(e.message, true); }
   }, 1000);
 }
@@ -415,7 +423,7 @@ function changed({ structure = false } = {}) {
 }
 async function save() {
   if (!S.clip) return;
-  setClip(await api(`/api/clips/${S.clip.id}/save`, { method: 'POST', body: { anim: S.anim } }), { keepTime: true });
+  setClip(await api(`/api/clips/${S.clip.id}/save`, { method: 'POST', body: { anim: S.anim } }), { keepTime: true, keepUndo: true });
   toast(t('done.saved'));
 }
 function selectPart(part) {
@@ -424,6 +432,28 @@ function selectPart(part) {
   for (const row of $$('.dope [data-row]', root)) row.classList.toggle('sel', row.dataset.row === part);
   markKeys();
   renderInspector();
+}
+
+// ---------- Undo / redo ----------
+// Every manual change records the animation before it. Saving keeps the steps; a generated,
+// restored or imported version or another clip starts fresh (the History tab goes back there).
+const snapshot = () => ({ anim: structuredClone(S.anim), t: S.t, part: S.part });
+const record = tag => { if (S.anim) undo.record(snapshot, tag); renderUndo(); };
+function applyStep(step) {
+  if (!step) return;
+  S.anim = step.anim;
+  S.tracks = buildTracks(S.anim);
+  S.dirty = JSON.stringify(S.anim) !== JSON.stringify(S.clip.anim);
+  S.part = step.part;
+  viewer.rig.highlight(S.part);
+  seek(step.t);
+  renderLower(); renderInspector(); renderClipbar(); renderUndo();
+}
+const undoStep = () => { if (undo.canUndo && !S.job) applyStep(undo.undo(snapshot())); };
+const redoStep = () => { if (undo.canRedo && !S.job) applyStep(undo.redo(snapshot())); };
+function renderUndo() {
+  $('#undoBtn', root).disabled = !undo.canUndo;
+  $('#redoBtn', root).disabled = !undo.canRedo;
 }
 
 // ---------- Events ----------
@@ -470,6 +500,8 @@ function wire() {
     else if (v === 'luau') { await navigator.clipboard.writeText(await api(`/api/clips/${S.clip.id}/luau`)); toast(t('done.luau')); }
     else setClip(await api(`/api/clips/${S.clip.id}/duplicate`, { method: 'POST' }));
   }));
+  $('#undoBtn', root).addEventListener('click', undoStep);
+  $('#redoBtn', root).addEventListener('click', redoStep);
   $('#tPlay', root).addEventListener('click', () => { if (!S.playing && S.t >= dur() - 1e-6) S.t = 0; setPlaying(!S.playing); });
   $('#tStart', root).addEventListener('click', () => seek(0));
   $('#tEnd', root).addEventListener('click', () => seek(dur()));
@@ -477,6 +509,13 @@ function wire() {
   $('#speed', root).addEventListener('change', e => { S.speed = Number(e.target.value); });
   $('#scrub', root).addEventListener('input', e => { scrubbing = true; seek((Number(e.target.value) / 1000) * dur()); });
   $('#scrub', root).addEventListener('change', () => { scrubbing = false; S.t = snap(S.t); renderInspector(); });
+  document.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || !['KeyZ', 'KeyY'].includes(e.code) || $('#view-editor').classList.contains('hidden')) return;
+    const el = document.activeElement;
+    if (el?.tagName === 'TEXTAREA' || (el?.tagName === 'INPUT' && !['range', 'checkbox', 'number'].includes(el.type))) return;
+    e.preventDefault();
+    if (e.code === 'KeyY' || e.shiftKey) redoStep(); else undoStep();
+  });
   document.addEventListener('keydown', e => {
     if (e.code !== 'Space' || $('#view-editor').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT|BUTTON/.test(document.activeElement?.tagName)) return;
     e.preventDefault();
@@ -515,6 +554,7 @@ function wire() {
     const [k, i] = el.dataset.k.split('.');
     const v = Number(el.value);
     if (!Number.isFinite(v)) return;
+    record(`${S.part}|${kf.t}|${el.dataset.k}`);
     kf.poses[S.part][k][Number(i)] = v;
     for (const twin of $$(`[data-k="${el.dataset.k}"]`, insp)) if (twin !== el) twin.value = String(v);
     changed();
@@ -523,13 +563,14 @@ function wire() {
     const el = e.target;
     const ki = kfAt(S.t);
     const kf = S.anim.keyframes[ki];
-    if (el.matches('[data-ease]') && kf?.poses[S.part]) { kf.poses[S.part].ease = el.value; changed(); }
-    else if (el.matches('[data-air]') && kf) { if (el.checked) kf.contact = 'air'; else delete kf.contact; changed(); }
-    else if (el.matches('[data-loop]')) { S.anim.loop = el.checked; changed({ structure: true }); }
-    else if (el.matches('[data-prio]')) { S.anim.priority = el.value; changed(); }
+    if (el.matches('[data-ease]') && kf?.poses[S.part]) { record(); kf.poses[S.part].ease = el.value; changed(); }
+    else if (el.matches('[data-air]') && kf) { record(); if (el.checked) kf.contact = 'air'; else delete kf.contact; changed(); }
+    else if (el.matches('[data-loop]')) { record(); S.anim.loop = el.checked; changed({ structure: true }); }
+    else if (el.matches('[data-prio]')) { record(); S.anim.priority = el.value; changed(); }
     else if (el.matches('[data-kt]') && kf && ki > 0) {
       const nt = r3(snap(Number(el.value)));
       if (!(nt > 0) || S.anim.keyframes.some((k, i) => i !== ki && Math.abs(k.t - nt) < 0.0005)) { renderInspector(); return; }
+      record();
       kf.t = nt;
       S.anim.keyframes.sort((a, b) => a.t - b.t);
       S.t = nt;
@@ -540,6 +581,8 @@ function wire() {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
     const ki = kfAt(S.t);
+    const canDeleteKf = ki > 0 && S.anim.keyframes.length > 2;
+    if (['addPose', 'delPose', 'addEv', 'delEv', 'discard'].includes(act) || (act === 'delKf' && canDeleteKf)) record();
     if (act === 'addPose') {
       const tt = r3(snap(S.t));
       let kf = S.anim.keyframes.find(k => Math.abs(k.t - tt) < 0.0005);
@@ -549,11 +592,11 @@ function wire() {
       S.t = tt;
       changed({ structure: true });
     } else if (act === 'delPose') { delete S.anim.keyframes[ki].poses[S.part]; changed({ structure: true }); }
-    else if (act === 'delKf' && ki > 0 && S.anim.keyframes.length > 2) { S.anim.keyframes.splice(ki, 1); S.t = Math.min(S.t, dur()); changed({ structure: true }); }
+    else if (act === 'delKf' && canDeleteKf) { S.anim.keyframes.splice(ki, 1); S.t = Math.min(S.t, dur()); changed({ structure: true }); }
     else if (act === 'addEv') { S.anim.events.push({ t: r3(snap(S.t)), name: $('[data-evname]', insp).value, value: '' }); S.anim.events.sort((a, b) => a.t - b.t); changed({ structure: true }); }
     else if (act === 'delEv') { S.anim.events.splice(Number(e.target.closest('[data-i]').dataset.i), 1); changed({ structure: true }); }
     else if (act === 'save') await save().catch(err => toast(err.message, true));
-    else if (act === 'discard') setClip(S.clip, { keepTime: true });
+    else if (act === 'discard') setClip(S.clip, { keepTime: true, keepUndo: true });
   });
 }
 async function restoreEntry(entry) {
