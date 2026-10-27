@@ -190,6 +190,7 @@ main { min-height: 0; }
 
 /* Inspector */
 .inspector { border-left: 1px solid var(--line); overflow-y: auto; }
+.inspector select[data-rig] { flex: 1; min-width: 0; max-width: 100%; }
 .section { padding: 12px; border-bottom: 1px solid var(--line); }
 .section h3 { margin: 0 0 8px; font: 600 15px var(--ui); display: flex; align-items: center; gap: 8px; }
 .section h3 .swatch { width: 10px; height: 10px; border-radius: 2px; }
@@ -200,7 +201,8 @@ main { min-height: 0; }
 .axis input[type=number] { height: 28px; padding: 0 5px; width: 62px; }
 .line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
 .line > label:first-child { min-width: 52px; font: 13px var(--ui); color: var(--muted); }
-.savebar { position: sticky; bottom: 0; display: flex; gap: 8px; padding: 10px 12px; background: #fff8e1; border-top: 1px solid #ecd9a0; }
+.savebar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background: #fff8e1; border-top: 1px solid #ecd9a0; }
+.savebar .grow { flex: 1 1 100%; }
 
 /* ---------- Library ---------- */
 .library { display: grid; grid-template-columns: 220px 1fr; height: 100%; }

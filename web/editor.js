@@ -4,7 +4,7 @@ import { t, ago, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import { store, studioId, show } from './app.js';
 import { Viewer } from './stage.js';
-import { RIG_R15, RIG_R6, REGION, eulerDeg } from '/core/rig.js';
+import { RIG_R15, RIG_R6, REGION, eulerDeg, partsOf, withDefaults } from '/core/rig.js';
 import { buildTracks, sampleTracks, EASES } from '/core/anim.js';
 import { formatIssue } from '/core/messages.js';
 import { createUndo } from './undo.js';
@@ -114,7 +114,15 @@ export function relabel() {
 
 // Rigs with other proportions (data/rigs); a clip's `rig` names the one it is made for.
 let rigs = [];
-const rigData = clip => (clip?.rig === 'r6' ? RIG_R6 : rigs.find(r => r.id === clip?.rig)?.rig ?? RIG_R15);
+const rigData = clip => {
+  if (clip?.rig === 'r6') return RIG_R6;
+  const stored = rigs.find(r => r.id === clip?.rig)?.rig;
+  if (!stored) return RIG_R15;
+  // One filled-in object per stored rig, so the viewer sees the same body and keeps its meshes.
+  if (!filled.has(stored)) filled.set(stored, withDefaults(stored));
+  return filled.get(stored);
+};
+const filled = new WeakMap();
 const body = () => rigData(S.clip);
 async function loadRigs() { try { rigs = await api('/api/rigs'); } catch { rigs = []; } }
 
@@ -139,6 +147,8 @@ function setClip(clip, { keepTime = false, keepUndo = false } = {}) {
   S.anim = structuredClone(clip.anim);
   S.tracks = buildTracks(S.anim);
   S.dirty = false;
+  // A joint the clip's body doesn't have (another rig family) can't stay selected.
+  if (S.part && !partsOf(rigData(clip)).includes(S.part)) S.part = null;
   if (!keepTime || S.t > dur()) S.t = 0;
   viewer.setRig(rigData(clip));
   if (!keepTime) viewer.fit(S.tracks, dur());
@@ -183,7 +193,8 @@ function fillEfforts() {
   prefs.set(`model.${prov?.id}`, modelId);
   $('#engCustom', root).classList.toggle('hidden', modelId !== CUSTOM);
   const efforts = model?.efforts ?? prov?.models[0]?.efforts ?? ['low', 'medium', 'high'];
-  const want = prefs.get(`effort.${prov?.id}`, 'high');
+  // Effort is only sent to OpenAI-compatible servers when chosen; many don't know it.
+  const want = prefs.get(`effort.${prov?.id}`, prov?.id === 'compatible' ? '' : 'high');
   $('#engEffort', root).innerHTML = `<option value="">${t('engine.default')}</option>` + efforts.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
   $('#engEffort', root).value = efforts.includes(want) ? want : '';
 }
@@ -196,7 +207,7 @@ function engine() {
 // ---------- Chat ----------
 const HISTORY_LABEL = kind => t(`history.${kind}`);
 function usageText(u) {
-  if (!u) return '';
+  if (!u || !(u.input + u.cached + u.output)) return ''; // servers that report no usage
   return t('msg.tokens', { in: kTok(u.input + u.cached), out: kTok(u.output) }) + (u.reasoning ? ` (${t('msg.thinking', { n: kTok(u.reasoning) })})` : '');
 }
 function renderChat() {
@@ -443,6 +454,7 @@ async function save() {
 const IMPORT_RIG = '__import';
 async function switchRig(value) {
   let rig = value;
+  if (S.job) { toast(t('err.busy'), true); renderInspector(); return; }
   try {
     if (rig === IMPORT_RIG) {
       const studio = studioId();

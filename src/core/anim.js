@@ -507,7 +507,8 @@ export function retarget(input, from, to) {
   // Standing phases in the source: per keyframe and foot, the keyframe where that plant began.
   const plantStart = new Map(), open = {};
   for (const kf of anim.keyframes) {
-    delete kf.contact;
+    // Keys marked as in the air stay so (later saves ground everything else); keys where both
+    // feet are off the ground in the source are marked too.
     const world = solve(sampleTracks(src, kf.t), from);
     if (lowestY(world, from.feet, from) > FLAT) kf.contact = 'air';
     const starts = {};
@@ -547,7 +548,6 @@ export function retarget(input, from, to) {
       for (const [part, r] of Object.entries(rotations)) kf.poses[part].rot = r.map(v => round(v, 2));
       corrected++;
     }
-    delete kf.contact;
   }
   const lifted = groundBetween(anim, to);
   if (lifted) fixes.push({ code: 'liftedBetween', count: lifted });
@@ -562,10 +562,14 @@ const IMPORT_EASE = { Linear: () => 'Linear', Constant: () => 'Constant', CubicV
 export function fromStudio(data, rig = RIG_R15) {
   const notes = [];
   const keyframes = [], events = [];
+  const foreign = new Set();
+  let fitting = 0;
   for (const kf of data.keyframes ?? []) {
     const poses = {};
     for (const [name, weight, c, style, dir] of kf.poses ?? []) {
-      if (!partsOf(rig).includes(name) || weight <= 0) continue;
+      if (weight <= 0) continue;
+      if (!partsOf(rig).includes(name)) { if (name !== rig.root) foreign.add(name); continue; }
+      fitting++;
       if (style === 'Constant' && dir === 'In') notes.push({ code: 'importConstantIn', part: name, t: kf.t });
       const map = IMPORT_EASE[style];
       if (!map) notes.push({ code: 'importEasing', part: name, t: kf.t, style });
@@ -575,6 +579,8 @@ export function fromStudio(data, rig = RIG_R15) {
     for (const [name, value] of kf.markers ?? []) events.push({ t: kf.t, name, value });
     if (Object.keys(poses).length || !(kf.markers ?? []).length) keyframes.push({ t: kf.t, poses });
   }
+  if (foreign.size && !fitting) throw Object.assign(new Error(`This animation is for another body (${[...foreign].slice(0, 4).join(', ')}…), not for this clip's ${rig.family ?? 'R15'} rig.`), { status: 400 });
+  for (const part of foreign) notes.push({ code: 'unknownJoint', part });
   const { anim, warnings } = normalize({ name: data.name, loop: data.loop, priority: data.priority, keyframes, events }, {}, rig);
   return { anim, warnings: [...notes, ...warnings], fixes: [], issues: inspect(anim, rig) };
 }

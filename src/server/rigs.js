@@ -54,7 +54,7 @@ export async function listRigs() {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 export async function loadRig(id) {
-  if (BUILTIN[id]) return BUILTIN[id];
+  if (Object.hasOwn(BUILTIN, id)) return BUILTIN[id];
   try { return JSON.parse(await readFile(rigPath(id), 'utf8')); }
   catch (e) { if (e.status) throw e; throw Object.assign(new Error('Rig not found.'), { status: 404 }); }
 }
@@ -63,7 +63,7 @@ export const BUILTIN = { r6: { id: 'r6', name: 'R6', rig: RIG_R6 } };
 // The body a clip is made for; a deleted rig falls back to the default one.
 export async function rigOf(clip) {
   if (!clip.rig) return RIG_R15;
-  if (BUILTIN[clip.rig]) return BUILTIN[clip.rig].rig;
+  if (Object.hasOwn(BUILTIN, clip.rig)) return BUILTIN[clip.rig].rig;
   try { return withDefaults((await loadRig(clip.rig)).rig); } catch { return RIG_R15; }
 }
 
@@ -75,11 +75,11 @@ export async function addRig(name, data, description = null) {
   const clean = String(name ?? '').replace(/[\p{Cc}]+/gu, ' ').trim().slice(0, 60) || 'Rig';
   const rig = checkRig(data);
   let id = slug(clean) || 'rig', n = 2;
-  while (existsSync(rigPath(id)) || BUILTIN[id]) id = `${slug(clean) || 'rig'}-${n++}`;
+  while (existsSync(rigPath(id)) || Object.hasOwn(BUILTIN, id)) id = `${slug(clean) || 'rig'}-${n++}`;
   rig.id = id;
   return write({ id, name: clean, createdAt: now(), description, rig });
 }
-const builtIn = id => { if (BUILTIN[id]) throw Object.assign(new Error('Built-in rigs cannot be changed.'), { status: 400 }); };
+const builtIn = id => { if (Object.hasOwn(BUILTIN, id)) throw Object.assign(new Error('Built-in rigs cannot be changed.'), { status: 400 }); };
 export async function renameRig(id, name) {
   builtIn(id);
   const entry = await loadRig(id);

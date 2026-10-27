@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { ROOT, loadSettings, saveSettings, secret, mask } from './settings.js';
 import { listProviders, testProvider } from './providers/index.js';
 import * as lib from './library.js';
-import { startJob, getJob, startCompare, compareStatus, listCompares } from './generate.js';
+import { startJob, getJob, startCompare, compareStatus, listCompares, isBusy } from './generate.js';
 import * as studio from './studio.js';
 import * as rigs from './rigs.js';
 import { prepare, retarget, restClip, isRest, fromStudio, toRbxmx, toLuauBuilder } from '../core/anim.js';
@@ -34,7 +34,11 @@ async function readBody(req) {
 const fileName = name => lib.slug(name).replace(/-/g, '_');
 const engineOf = b => ({ provider: String(b.provider ?? ''), model: String(b.model ?? ''), effort: String(b.effort ?? '') });
 const bodyOf = async id => (id ? rigs.loadRig(id).catch(() => null) : null);
-const entryAnim = (clip, entry) => clip.history.find(h => h.id === Number(entry))?.anim ?? clip.anim;
+const entryOf = (clip, entry) => clip.history.find(h => h.id === Number(entry)) ?? { anim: clip.anim, rig: clip.rig ?? '' };
+// The body a version was made for. Versions saved before 0.2 don't say; R6 ones are known by their part names.
+const entryRig = (clip, h) => h.rig ?? (h.anim.keyframes.some(k => k.poses.Torso) ? 'r6' : '');
+const sheetOf = async (clip, entry) => { const h = entryOf(clip, entry); return renderSheet(h.anim, { rig: await rigs.rigOf({ rig: entryRig(clip, h) }) }); };
+const notWhileBusy = id => { if (isBusy(id)) throw Object.assign(new Error('Wait until this clip has finished generating.'), { status: 409 }); };
 
 async function settingsView() {
   const s = await loadSettings();
@@ -55,7 +59,12 @@ const routes = [
   ['PUT', /^\/api\/settings$/, async (req) => { localOnly(req); await saveSettings(await readBody(req)); return settingsView(); }],
   ['POST', /^\/api\/settings\/test$/, async (req) => { localOnly(req); return { message: await testProvider((await readBody(req)).provider) }; }],
 
-  ['GET', /^\/api\/clips$/, async () => ({ clips: await lib.listClips(), folders: await lib.listFolders() })],
+  ['GET', /^\/api\/clips$/, async () => {
+    // Clips made for another body show its name in the library.
+    const names = Object.fromEntries([...Object.values(rigs.BUILTIN), ...await rigs.listRigs()].map(r => [r.id, r.name]));
+    const clips = (await lib.listClips()).map(c => ({ ...c, rigName: c.rig ? names[c.rig] ?? '' : '' }));
+    return { clips, folders: await lib.listFolders() };
+  }],
   ['POST', /^\/api\/clips$/, async (req) => {
     const b = await readBody(req);
     const clip = await lib.createClip(String(b.name || 'New animation').slice(0, 80), String(b.folder ?? ''));
@@ -82,17 +91,22 @@ const routes = [
     const { entry } = await readBody(req);
     const h = clip.history.find(x => x.id === Number(entry));
     if (!h) throw Object.assign(new Error('History entry not found.'), { status: 404 });
-    lib.addEntry(clip, { ...h, anim: { ...structuredClone(h.anim), name: clip.name } }, 'restored', String(h.id));
+    // A version made for another body is fitted to the clip's current one (same family only).
+    const from = await rigs.rigOf({ rig: entryRig(clip, h) }), to = await rigs.rigOf(clip);
+    let result = { ...h, anim: structuredClone(h.anim) };
+    if (entryRig(clip, h) !== (clip.rig ?? '')) {
+      if ((from.family ?? 'R15') !== (to.family ?? 'R15')) throw Object.assign(new Error(`This version was made for ${from.family ?? 'R15'}, the clip is now ${to.family ?? 'R15'}.`), { status: 400 });
+      result = retarget(h.anim, from, to);
+    }
+    lib.addEntry(clip, { ...result, anim: { ...result.anim, name: clip.name } }, 'restored', String(h.id));
     return lib.saveClip(clip);
   }],
   ['GET', /^\/api\/clips\/([a-z0-9-]+)\/sheet$/, async (req, [id], url) => {
-    const clip = await lib.loadClip(id);
-    const { times, cell, views } = renderSheet(entryAnim(clip, url.searchParams.get('entry')), { rig: await rigs.rigOf(clip) });
+    const { times, cell, views } = await sheetOf(await lib.loadClip(id), url.searchParams.get('entry'));
     return { times, cell, views };
   }],
   ['GET', /^\/api\/clips\/([a-z0-9-]+)\/sheet\.png$/, async (req, [id], url) => {
-    const clip = await lib.loadClip(id);
-    return { png: renderSheet(entryAnim(clip, url.searchParams.get('entry')), { rig: await rigs.rigOf(clip) }).png };
+    return { png: (await sheetOf(await lib.loadClip(id), url.searchParams.get('entry'))).png };
   }],
   ['GET', /^\/api\/clips\/([a-z0-9-]+)\/strip\.png$/, async (req, [id]) => {
     const clip = await lib.loadClip(id);
@@ -103,6 +117,7 @@ const routes = [
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/rig$/, async (req, [id]) => {
     const clip = await lib.loadClip(id);
     const { rig: next = '' } = await readBody(req);
+    notWhileBusy(id);
     const to = next ? await rigs.loadRig(String(next)) : null;
     if ((to?.id ?? '') === (clip.rig ?? '')) return clip;
     const from = await rigs.rigOf(clip), target = to?.rig ?? RIG_R15;

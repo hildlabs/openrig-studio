@@ -22,7 +22,8 @@ async function loadRigs() { try { rigs = await api('/api/rigs'); } catch { rigs 
 
 function providerBlock(p) {
   const ok = p.available;
-  const state = p.kind === 'api' ? (ok ? t('set.ready') : t('set.noKey')) : (ok ? t('set.ready') : t('set.notFound'));
+  // The OpenAI-compatible API is usable once it has a base URL (local servers need no key).
+  const state = ok ? t('set.ready') : p.id === 'compatible' ? t('set.noUrl') : p.kind === 'api' ? t('set.noKey') : t('set.notFound');
   const how = {
     'claude-code': t('set.claudeHow', { cmd: '<code>claude</code>' }),
     codex: t('set.codexHow', { cmd: '<code>codex</code>' }),

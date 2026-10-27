@@ -173,7 +173,7 @@ return string.format("%.1f s", total)`;
 }
 // Plays on the local player's avatar in a running playtest (client side, replicates).
 function playtestLuau(anim, rig = RIG_R15) {
-  const family = rig.family ?? 'R15', other = family === 'R6' ? 'R15' : 'R6';
+  const family = rig.family === 'R6' ? 'R6' : 'R15', other = family === 'R6' ? 'R15' : 'R6';
   return `local player = game:GetService("Players").LocalPlayer
 local char = player.Character or player.CharacterAdded:Wait()
 local hum = char:WaitForChild("Humanoid", 10)

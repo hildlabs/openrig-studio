@@ -82,6 +82,7 @@ export function engineLabel(providers, { provider, model, effort }) {
 // ---------- Jobs ----------
 const jobs = new Map();
 const busy = new Set();
+export const isBusy = id => busy.has(id);
 export const getJob = id => jobs.get(id);
 
 // Draft → checks → optional visual review, without touching the library. clip only provides

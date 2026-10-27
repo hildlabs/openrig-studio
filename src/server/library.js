@@ -31,7 +31,7 @@ export async function saveClip(clip) {
 // kind: created | generated | draft | edited | imported | restored | retargeted
 export function addEntry(clip, result, kind, label = '') {
   const id = (clip.history.at(-1)?.id ?? 0) + 1;
-  clip.history.push({ id, at: now(), kind, label, anim: result.anim, warnings: result.warnings ?? [], fixes: result.fixes ?? [], issues: result.issues ?? [] });
+  clip.history.push({ id, at: now(), kind, label, rig: clip.rig ?? '', anim: result.anim, warnings: result.warnings ?? [], fixes: result.fixes ?? [], issues: result.issues ?? [] });
   clip.anim = result.anim;
   clip.current = id;
   return id;
@@ -56,7 +56,7 @@ export async function listClips() {
       out.push({
         id: c.id, name: c.name, folder: c.folder ?? '', starred: Boolean(c.starred), createdAt: c.createdAt, updatedAt: c.updatedAt,
         duration: c.anim.keyframes.at(-1).t, loop: c.anim.loop, keyframes: c.anim.keyframes.length,
-        model: gen?.label ?? '', issues: (c.history.find(h => h.id === c.current)?.issues ?? []).length,
+        model: gen?.label ?? c.chat?.findLast(m => m.engine)?.engine ?? '', rig: c.rig ?? '', issues: (c.history.find(h => h.id === c.current)?.issues ?? []).length,
       });
     } catch { /* skip unreadable files */ }
   }
@@ -75,6 +75,7 @@ export async function duplicateClip(id) {
   const src = await loadClip(id);
   const copy = await createClip(`${src.name} copy`, src.folder);
   copy.history = [];
+  if (src.rig) copy.rig = src.rig;
   addEntry(copy, { anim: { ...structuredClone(src.anim), name: copy.name } }, 'created', src.name);
   return saveClip(copy);
 }
