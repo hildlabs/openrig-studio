@@ -51,6 +51,7 @@ Part sizes and joint offsets (`src/core/rig.js`) come from the attachments of St
 - **Codex CLI:** `codex exec --json --sandbox read-only` in an empty temp folder; images are attached with `--image`. Models come from Codex's own model cache.
 - **Anthropic API:** official SDK, streaming, effort via `output_config`, prompt caching on the system prompt, server-side refusal fallback on models that support it.
 - **OpenAI API:** official SDK, Responses API, `reasoning.effort`.
+- **OpenAI-compatible API:** plain `fetch` to `<base URL>/chat/completions`, streamed so long generations don't hit Node's 5 minute header timeout. `max_tokens` and `reasoning_effort` are only sent when set, since servers differ in what they accept. `<think>` blocks some servers put into the answer are removed. Visual review only runs when Settings say the models can see images.
 
 ## Roblox Studio bridge (`src/server/studio.js`)
 

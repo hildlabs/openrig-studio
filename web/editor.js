@@ -203,7 +203,7 @@ function renderChat() {
     const plan = m.plan?.length ? `<details><summary>${t('msg.plan')}</summary><ol>${m.plan.map(p => `<li>${esc(p)}</li>`).join('')}</ol></details>` : '';
     const findings = m.findings?.length ? `<details><summary>${t('msg.findings', { n: m.findings.length })}</summary><ul>${m.findings.map(f => `<li>${esc(formatIssue(f, getLang()))}</li>`).join('')}</ul></details>` : '';
     const fixes = m.fixes?.length ? `<details><summary>${t('msg.fixes')}</summary><ul>${m.fixes.map(f => `<li>${esc(formatIssue(f, getLang()))}</li>`).join('')}</ul></details>` : '';
-    const review = m.review?.applied ? t('msg.reviewed') : m.review ? t('msg.reviewKept', { reason: t({ worse: 'msg.reviewWorse', noJson: 'msg.reviewNoJson' }[m.review.reason] ?? 'msg.reviewError') }) : '';
+    const review = m.review?.applied ? t('msg.reviewed') : m.review ? t('msg.reviewKept', { reason: t({ worse: 'msg.reviewWorse', noJson: 'msg.reviewNoJson', noImages: 'msg.reviewNoImages' }[m.review.reason] ?? 'msg.reviewError') }) : '';
     return `<div class="msg-bot"><div class="txt">${esc(m.text)}</div>${plan}${findings}${fixes}<div class="msg-meta num"><span>${esc(m.engine)}</span><span>${m.seconds} s</span>${m.usage ? `<span>${usageText(m.usage)}</span>` : ''}${review ? `<span>${review}</span>` : ''}${m.draftEntry ? `<button data-restore="${m.draftEntry}">${t('msg.restoreDraft')}</button>` : ''}</div></div>`;
   }).join('');
   box.scrollTop = box.scrollHeight;

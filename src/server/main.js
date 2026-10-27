@@ -38,6 +38,8 @@ async function settingsView() {
   return {
     anthropicApiKey: mask(secret(s, 'anthropicApiKey', 'ANTHROPIC_API_KEY')),
     openaiApiKey: mask(secret(s, 'openaiApiKey', 'OPENAI_API_KEY')),
+    compatApiKey: mask(secret(s, 'compatApiKey', 'OPENAI_COMPATIBLE_API_KEY')),
+    compatBaseUrl: s.compatBaseUrl, compatModels: s.compatModels, compatMaxTokens: s.compatMaxTokens, compatImages: s.compatImages,
     openaiModels: s.openaiModels, claudePath: s.claudePath, codexPath: s.codexPath, studioMcpPath: s.studioMcpPath, style: s.style,
     studioMcpFound: await studio.findStudioMcp(),
   };

@@ -4,6 +4,7 @@ import { run as runProcess } from '../process.js';
 import * as claudeCode from './claude-code.js';
 import * as codex from './codex.js';
 import { ANTHROPIC_MODELS, runAnthropic, runOpenAI, testAnthropic, testOpenAI } from './api.js';
+import * as compatible from './compatible.js';
 
 export async function listProviders() {
   const s = await loadSettings();
@@ -11,6 +12,7 @@ export async function listProviders() {
   const anthropicKey = secret(s, 'anthropicApiKey', 'ANTHROPIC_API_KEY');
   const openaiKey = secret(s, 'openaiApiKey', 'OPENAI_API_KEY');
   const codexModels = codex.models();
+  const compat = compatibleConfig(s);
   const openaiModels = [
     ...s.openaiModels.split(',').map(x => x.trim()).filter(Boolean).map(id => ({ id, label: id, efforts: ['low', 'medium', 'high', 'xhigh'] })),
     ...codexModels.filter(m => m.id && m.apiAvailable),
@@ -20,10 +22,24 @@ export async function listProviders() {
     { id: 'codex', label: 'Codex CLI', kind: 'subscription', available: Boolean(codexExe), detail: codexExe, models: codexModels },
     { id: 'anthropic', label: 'Anthropic API', kind: 'api', available: Boolean(anthropicKey), models: ANTHROPIC_MODELS },
     { id: 'openai', label: 'OpenAI API', kind: 'api', available: Boolean(openaiKey), models: openaiModels },
+    { id: 'compatible', label: 'OpenAI-compatible API', kind: 'api', available: Boolean(compat.url), images: compat.images, models: compatible.models(s.compatModels) },
   ];
 }
 
-const safe = s => /^[\w.:-]{0,80}$/.test(String(s ?? ''));
+// Model ids may contain '/' (OpenRouter: deepseek/deepseek-chat) and ':' (Ollama: qwen3:32b).
+const safe = s => /^[\w.:/-]{0,100}$/.test(String(s ?? ''));
+
+const compatibleConfig = s => ({
+  url: compatible.baseUrl(s.compatBaseUrl),
+  key: secret(s, 'compatApiKey', 'OPENAI_COMPATIBLE_API_KEY'),
+  maxTokens: s.compatMaxTokens,
+  images: s.compatImages === 'on',
+});
+
+// Visual review sends an image; text-only models skip it.
+export async function acceptsImages(engine) {
+  return engine.provider !== 'compatible' || compatibleConfig(await loadSettings()).images;
+}
 
 // request: { provider, model, effort, system, text, images }
 export async function callModel(request) {
@@ -50,6 +66,7 @@ export async function callModel(request) {
       if (!key) throw new Error('No OpenAI API key. Add one in Settings.');
       return runOpenAI(key, request);
     }
+    case 'compatible': return compatible.runCompatible(compatibleConfig(s), request);
     default: throw new Error(`Unknown provider "${request.provider}".`);
   }
 }
@@ -66,5 +83,6 @@ export async function testProvider(id) {
   }
   if (id === 'anthropic') return testAnthropic(secret(s, 'anthropicApiKey', 'ANTHROPIC_API_KEY'));
   if (id === 'openai') return testOpenAI(secret(s, 'openaiApiKey', 'OPENAI_API_KEY'));
+  if (id === 'compatible') return compatible.testCompatible(compatibleConfig(s));
   throw new Error(`Unknown provider "${id}".`);
 }

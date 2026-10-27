@@ -25,6 +25,7 @@ You need [Node.js](https://nodejs.org) 20 or newer and at least one AI provider:
 | Codex CLI | The [Codex CLI](https://github.com/openai/codex) installed. Run `codex` once and log in with your ChatGPT subscription. |
 | Anthropic API | An API key from console.anthropic.com |
 | OpenAI API | An API key from platform.openai.com |
+| OpenAI-compatible API | Any server in the OpenAI Chat Completions format: DeepSeek, Qwen, Kimi, GLM, OpenRouter, or local models through Ollama or LM Studio. Enter the base URL, a key if needed and the model ids in Settings. |
 
 ```sh
 git clone https://github.com/hildlabs/openrig-studio.git
@@ -34,6 +35,12 @@ npm start          # or double-click start.cmd (Windows) / run ./start.sh (macOS
 ```
 
 Open <http://localhost:4330>. The Settings tab shows which providers were found and is where you paste API keys. Keys are stored only on your computer in `data/settings.json`; you can also put them in a `.env` file (see `.env.example`).
+
+Notes for the OpenAI-compatible API:
+
+- Answers are long (8,000 to 20,000 tokens, thinking models more). If the app says the answer was cut off, raise *Max output tokens* in Settings. Ollama loads models with a small context by default; start it with a larger one, e.g. `OLLAMA_CONTEXT_LENGTH=32768`.
+- Visual review sends an image of the draft. Tick *The models can see images* only if yours can; otherwise review is skipped.
+- Small local models run, but expect much rougher results than the large hosted ones.
 
 ## Working with Roblox Studio
 
@@ -63,6 +70,7 @@ Details and the Roblox measurements behind the preview: [docs/how-it-works.md](d
 OpenRig Studio gives you a solid first draft, not a finished hand-keyed animation. Plan to polish important clips in the Animation Editor.
 
 - **R15 only.** No R6, no custom or non-humanoid rigs.
+- **Made for default R15 proportions.** The rotations play on any R15 rig, but IK, planted feet and grounding are calculated for the standard blocky body. On Rthro or scaled avatars feet can slide or sink and hands miss their targets.
 - **It takes a while.** With Claude Code · Opus 5.5 · high (the default) a clip took 1 to 3.5 minutes in the benchmark, about 2 on average. Faster models and lower effort are quicker but less reliable.
 - **It uses your plan's limits.** One clip with visual review is two model calls and 6,000 to 22,000 output tokens. Free for the app, not free for your usage quota.
 - **Turning on the spot is the weak spot.** Planted feet still slide during spins and sitting down. Fast arm motions such as a cheer can snap between two keys; the checks flag these.
@@ -121,4 +129,4 @@ MIT, see [LICENSE](LICENSE).
 
 ## Kurz auf Deutsch
 
-OpenRig Studio erzeugt Roblox-R15-Animationen mit den KI-Abos, die du schon hast (Claude Code, Codex CLI) oder mit API-Keys. Node.js 20+ installieren, Repo klonen, `npm start` ausführen bzw. `start.cmd` doppelklicken und <http://localhost:4330> öffnen. In den Einstellungen siehst du, welche Anbieter gefunden wurden; oben rechts schaltest du die Oberfläche auf Deutsch um.
+OpenRig Studio erzeugt Roblox-R15-Animationen mit den KI-Abos, die du schon hast (Claude Code, Codex CLI), mit API-Keys oder über jede OpenAI-kompatible API (DeepSeek, Qwen, Kimi, OpenRouter, Ollama …). Node.js 20+ installieren, Repo klonen, `npm start` ausführen bzw. `start.cmd` doppelklicken und <http://localhost:4330> öffnen. In den Einstellungen siehst du, welche Anbieter gefunden wurden; oben rechts schaltest du die Oberfläche auf Deutsch um.
