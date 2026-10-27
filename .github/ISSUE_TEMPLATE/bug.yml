@@ -1,0 +1,37 @@
+name: Bug report
+description: Something in the app doesn't work, such as setup, a provider, the editor, the library or the Studio bridge.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead. Paste error messages as text.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11, macOS 15, Ubuntu 24.04, …
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: Output of `node -v`.
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      multiple: true
+      options: [Claude Code, Codex CLI, Anthropic API, OpenAI API, Not related to a provider]
+  - type: textarea
+    id: log
+    attributes:
+      label: Server output
+      description: The text in the terminal window where OpenRig Studio runs, if anything looks relevant. Remove anything private first.
+      render: text

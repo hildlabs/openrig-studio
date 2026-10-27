@@ -1,0 +1,37 @@
+name: Animation looks wrong
+description: A generated clip has a problem, such as sliding feet, snapping joints or a motion that doesn't match the prompt.
+labels: [animation]
+body:
+  - type: textarea
+    id: prompt
+    attributes:
+      label: Prompt
+      description: The exact text you sent, including follow-up messages if there were any.
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and effort
+      placeholder: Claude Code · Opus 5.5 · high
+    validations:
+      required: true
+  - type: dropdown
+    id: review
+    attributes:
+      label: Visual review
+      options: ["On", "Off"]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What looks wrong
+      description: Where in the clip (time or keyframe) and which body parts. A screenshot or screen recording helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: clip
+    attributes:
+      label: Clip file
+      description: Drag the clip's file from `data/clips/` in the OpenRig Studio folder in here, so the problem can be reproduced.
