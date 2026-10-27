@@ -4,7 +4,7 @@ import path from 'node:path';
 import { readFileSync, readdirSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { ROOT, DATA, loadSettings } from './settings.js';
-import { callModel, listProviders } from './providers/index.js';
+import { callModel, listProviders, acceptsImages } from './providers/index.js';
 import { loadClip, saveClip, addEntry, createClip, slug } from './library.js';
 import { prepare, measure, forModel, isRest } from '../core/anim.js';
 import { formatIssues } from '../core/messages.js';
@@ -91,7 +91,8 @@ export async function runPipeline({ clip, wish, mode, engine, system, review: wi
   const draftUsage = usage;
   let result = draft, notes = json.notes ?? '', plan = json.plan;
   let review = null, better = null;
-  if (withReview) {
+  if (withReview && !await acceptsImages(engine)) review = { applied: false, reason: 'noImages' };
+  else if (withReview) {
     onStep('review');
     try {
       const sheet = renderSheet(draft.anim);

@@ -22,6 +22,11 @@ const DEFAULTS = {
   anthropicApiKey: '',
   openaiApiKey: '',
   openaiModels: '',      // comma-separated extra model ids for the OpenAI API
+  compatBaseUrl: '',     // OpenAI-compatible API (Chat Completions), e.g. https://api.deepseek.com/v1
+  compatApiKey: '',
+  compatModels: '',      // comma-separated model ids
+  compatMaxTokens: '',   // optional max_tokens; empty = the server's default
+  compatImages: '',      // 'on' when the models accept images (needed for visual review)
   claudePath: '',        // optional override for the claude CLI
   codexPath: '',         // optional override for the codex CLI
   studioMcpPath: '',     // optional override for Roblox's StudioMCP executable
