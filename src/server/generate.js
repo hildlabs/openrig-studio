@@ -6,7 +6,9 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { ROOT, DATA, loadSettings } from './settings.js';
 import { callModel, listProviders, acceptsImages } from './providers/index.js';
 import { loadClip, saveClip, addEntry, createClip, slug } from './library.js';
-import { prepare, measure, forModel, isRest } from '../core/anim.js';
+import { prepare, retarget, measure, forModel, isRest } from '../core/anim.js';
+import { RIG_R15 } from '../core/rig.js';
+import { rigOf } from './rigs.js';
 import { formatIssues } from '../core/messages.js';
 import { renderSheet } from '../core/render.js';
 
@@ -118,9 +120,20 @@ async function generate(job, { id, prompt, engine, mode: requested, lang = 'en',
   const label = engineLabel(await listProviders(), engine);
   const system = await systemPrompt(lang);
   const started = Date.now();
-  const { draft, result, notes, plan, review, usage, draftUsage } = await runPipeline({
-    clip, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; },
+  // Models always work on the default body (the system prompt describes it). A clip made for
+  // another rig is shown to them retargeted back, and their answer is retargeted onto the rig.
+  const rig = await rigOf(clip);
+  const fit = r => {
+    if (rig === RIG_R15) return r;
+    const moved = retarget(r.anim, RIG_R15, rig);
+    return { ...r, anim: moved.anim, fixes: [...r.fixes, ...moved.fixes], issues: moved.issues };
+  };
+  const view = rig === RIG_R15 ? clip : { ...clip, anim: retarget(clip.anim, rig, RIG_R15).anim };
+  const out = await runPipeline({
+    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; },
   });
+  const { notes, plan, review, usage, draftUsage } = out;
+  const draft = fit(out.draft), result = fit(out.result);
   if (fixedName) { result.anim.name = fixedName; draft.anim.name = fixedName; }
   const draftEntry = review?.applied ? addEntry(clip, draft, 'draft', label) : undefined;
   const entry = addEntry(clip, result, 'generated', label);

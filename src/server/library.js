@@ -33,7 +33,7 @@ export async function saveClip(clip) {
   return clip;
 }
 
-// kind: created | generated | draft | edited | imported | restored
+// kind: created | generated | draft | edited | imported | restored | retargeted
 export function addEntry(clip, result, kind, label = '') {
   const id = (clip.history.at(-1)?.id ?? 0) + 1;
   clip.history.push({ id, at: now(), kind, label, anim: result.anim, warnings: result.warnings ?? [], fixes: result.fixes ?? [], issues: result.issues ?? [] });

@@ -282,8 +282,8 @@ function lockFeet(anim) {
 // planted foot drifts or dips (most when the body accelerates out of a squat). Gaps where the
 // foot leaves its place by more than LOCK_TOL are halved until it stays, down to 1/60 s.
 const LOCK_TOL = 0.02, LOCK_MIN = 1 / 60;
-const footAt = (anim, foot, t) => solve(sample(anim, t))[foot].p;
-function refineLocks(anim) {
+const footAt = (anim, foot, t, rig) => solve(sample(anim, t), rig)[foot].p;
+function refineLocks(anim, rig) {
   for (let pass = 0; pass < 4; pass++) {
     const inserts = new Map();
     for (const foot of FEET) {
@@ -292,7 +292,7 @@ function refineLocks(anim) {
         const a = keys[i], b = keys[i + 1];
         if (!a.linear?.includes(foot) || b.t - a.t < 2 * LOCK_MIN) continue;
         const t = round((a.t + b.t) / 2);
-        const pa = footAt(anim, foot, a.t), pb = footAt(anim, foot, b.t), pm = footAt(anim, foot, t);
+        const pa = footAt(anim, foot, a.t, rig), pb = footAt(anim, foot, b.t, rig), pm = footAt(anim, foot, t, rig);
         if (Math.hypot(...pm.map((v, k) => v - (pa[k] + pb[k]) / 2)) <= LOCK_TOL) continue;
         const entry = inserts.get(t) ?? anim.keyframes.find(k => k.t === t) ?? { t, poses: {}, locked: true };
         if (IK_CHAINS[foot].joints.some(j => entry.poses[j])) continue;
@@ -304,23 +304,23 @@ function refineLocks(anim) {
     if (!inserts.size) break;
     const fresh = [...inserts.values()].filter(k => !anim.keyframes.includes(k));
     anim.keyframes = [...anim.keyframes, ...fresh].sort((x, y) => x.t - y.t);
-    applyIK(anim, [...inserts.values()]);
+    applyIK(anim, [...inserts.values()], rig);
   }
 }
 
-const REST_LT = solve({}).LowerTorso;
 // Hands default to body space (they follow hips, jumps and turns), feet to world space.
-function applyIK(anim, keyframes = anim.keyframes) {
+function applyIK(anim, keyframes = anim.keyframes, rig = RIG_R15) {
   const notes = [];
+  const restLT = solve({}, rig).LowerTorso;
   for (const kf of keyframes) {
     if (!kf.ik) continue;
     for (const [end, target] of Object.entries(kf.ik)) {
       const base = sample(anim, kf.t);
       const chain = IK_CHAINS[end];
       const space = kf.ikSpace?.[end] ?? (chain.foot ? 'world' : 'body');
-      const goal = space === 'body' ? point(mul(solve(base).LowerTorso, inv(REST_LT)), target) : target;
+      const goal = space === 'body' ? point(mul(solve(base, rig).LowerTorso, inv(restLT)), target) : target;
       const rot = Object.fromEntries(chain.joints.map(j => [j, kf.poses[j]?.rot ?? (base[j] ? eulerDeg(base[j].R) : [0, 0, 0])]));
-      const { rotations, error } = solveChain(end, goal, base, rot);
+      const { rotations, error } = solveChain(end, goal, base, rot, rig);
       const ease = kf.linear?.includes(end) ? 'Linear' : null;
       for (const [part, r] of Object.entries(rotations)) {
         kf.poses[part] = { rot: r.map(v => round(v, 2)), pos: kf.poses[part]?.pos ?? [0, 0, 0], ease: ease ?? kf.poses[part]?.ease ?? 'InOut' };
@@ -430,30 +430,125 @@ export function measure(anim, rig = RIG_R15) {
 // feet and the body height agree. Model output (literal) also gets automatic motion flow.
 // Foot-lock in-betweens have no body key, so the body there depends on its easing: they are
 // solved again once motion flow has changed it, then refined.
-export function prepare(input, { ground = true, literal = false } = {}) {
-  const { anim, warnings } = normalize(input, { literal });
+export function prepare(input, { ground = true, literal = false } = {}, rig = RIG_R15) {
+  const { anim, warnings } = normalize(input, { literal }, rig);
   const hasIK = anim.keyframes.some(k => k.ik);
   if (hasIK) lockFeet(anim);
-  let ikNotes = hasIK ? applyIK(anim) : [];
+  let ikNotes = hasIK ? applyIK(anim, anim.keyframes, rig) : [];
   if (hasIK) startAtRest(anim.keyframes);
-  let fixes = ground ? groundFeet(anim) : [];
+  let fixes = ground ? groundFeet(anim, rig) : [];
   if (hasIK) {
-    ikNotes = applyIK(anim);
-    if (ground) fixes = groundFeet(anim);
+    ikNotes = applyIK(anim, anim.keyframes, rig);
+    if (ground) fixes = groundFeet(anim, rig);
   }
   const flow = literal ? smoothFlow(anim) : 0;
   if (flow) fixes = [...fixes, { code: 'flowSmoothed', count: flow }];
   if (hasIK) {
-    if (flow) applyIK(anim, anim.keyframes.filter(k => k.locked));
-    refineLocks(anim);
+    if (flow) applyIK(anim, anim.keyframes.filter(k => k.locked), rig);
+    refineLocks(anim, rig);
     stripIK(anim);
   }
   // Only model output: in the editor the last keyframe of a loop stays what the user made it.
   const closed = literal && anim.loop ? closeLoop(anim) : 0;
   if (closed) fixes = [...fixes, { code: 'loopClosed', count: closed }];
-  const lifted = ground ? groundBetween(anim) : 0;
+  const lifted = ground ? groundBetween(anim, rig) : 0;
   if (lifted) fixes = [...fixes, { code: 'liftedBetween', count: lifted }];
-  return { anim, warnings: [...warnings, ...ikNotes], fixes, issues: inspect(anim) };
+  return { anim, warnings: [...warnings, ...ikNotes], fixes, issues: inspect(anim, rig) };
+}
+
+// ---------- Retarget ----------
+// Moves a clip made for one rig onto another with different proportions, changing as little
+// as possible: joint rotations stay, root motion scales with the hip height and the body is
+// grounded again. A foot that stands still in the source is held where it stood on the new
+// legs when that plant began; only if it drifts from there does the leg get IK (the foot keeps
+// its own rotation). Keyframes with both feet off the ground stay in the air.
+const FLAT = 0.06;       // studs: foot centre this close to its resting height counts as standing flat
+const STILL = 0.05;      // studs a flat foot may move in the source and still count as the same plant
+const PLANT_TOL = 0.04;  // studs a planted foot may drift on the new rig before its leg is corrected
+// Splitting an eased segment at fraction f: the easing for each half that follows the original
+// curve most closely (InOut split early stays slow at first, split late it ends slow, ...).
+const FIT_EASES = ['InOut', 'In', 'Out', 'Linear'];
+function splitEase(ease, f) {
+  const fit = (lo, hi) => {
+    const v0 = easeAlpha(ease, lo), v1 = easeAlpha(ease, hi);
+    let best = null;
+    for (const e of FIT_EASES) {
+      let err = 0;
+      for (let i = 1; i < 16; i++) {
+        const a = i / 16;
+        err = Math.max(err, Math.abs(v0 + (v1 - v0) * easeAlpha(e, a) - easeAlpha(ease, lo + (hi - lo) * a)));
+      }
+      if (!best || err < best.err - 1e-9) best = { e, err };
+    }
+    return best.e;
+  };
+  return [fit(0, f), fit(f, 1)];
+}
+// Keys a joint at kf. A joint that was only interpolated there gets its sampled pose, and the
+// segment it splits gets the easings that keep its curve, so the motion flows as before.
+function keyAt(anim, kf, part) {
+  if (kf.poses[part]) return kf.poses[part];
+  const s = sample(anim, kf.t)[part] ?? IDENTITY;
+  const before = anim.keyframes.findLast(k => k.t < kf.t && k.poses[part]);
+  const after = anim.keyframes.find(k => k.t > kf.t && k.poses[part]);
+  const ease = before?.poses[part].ease ?? 'InOut';
+  if (!before || !after || !SPLIT_EASE[ease]) return (kf.poses[part] = bodyPose(s, ease));
+  const [first, second] = splitEase(ease, (kf.t - before.t) / (after.t - before.t));
+  before.poses[part].ease = first;
+  return (kf.poses[part] = bodyPose(s, second));
+}
+export function retarget(input, from, to) {
+  const s = to.hipHeight / from.hipHeight;
+  const anim = structuredClone(input);
+  const src = buildTracks(input);
+  // Standing phases in the source: per keyframe and foot, the keyframe where that plant began.
+  const plantStart = new Map(), open = {};
+  for (const kf of anim.keyframes) {
+    delete kf.contact;
+    const world = solve(sampleTracks(src, kf.t), from);
+    if (lowestY(world, FEET, from) > FLAT) kf.contact = 'air';
+    const starts = {};
+    for (const foot of FEET) {
+      const p = world[foot].p;
+      if (p[1] - from.parts[foot][1] / 2 > FLAT) { open[foot] = null; continue; }
+      const o = open[foot];
+      if (!o || Math.hypot(p[0] - o.p[0], p[1] - o.p[1], p[2] - o.p[2]) > STILL) open[foot] = { kf, p };
+      starts[foot] = open[foot].kf;
+    }
+    plantStart.set(kf, starts);
+    const lt = kf.poses.LowerTorso;
+    if (lt) lt.pos = lt.pos.map(v => round(v * s));
+  }
+  // Ground every keyframe on the new body, then hold each planted foot where it stood on the
+  // new legs when its plant began.
+  const fixes = [], anchors = new Map();
+  let corrected = 0;
+  for (const kf of anim.keyframes) {
+    const low = lowestY(solve(sample(anim, kf.t), to), FEET, to);
+    const delta = kf.contact === 'air' ? Math.max(0, -low) : -low;
+    if (Math.abs(delta) >= 0.01) {
+      const lt = keyAt(anim, kf, 'LowerTorso');
+      lt.pos[1] = round(lt.pos[1] + delta);
+      if (Math.abs(delta) > 0.15) fixes.push({ code: 'bodyLowered', t: kf.t, delta });
+    }
+    for (const [foot, start] of Object.entries(plantStart.get(kf))) {
+      const at = solve(sample(anim, kf.t), to)[foot].p;
+      const sole = [at[0], at[1] - to.parts[foot][1] / 2, at[2]];
+      if (start === kf) { anchors.set(`${foot}@${kf.t}`, sole); continue; }
+      const want = anchors.get(`${foot}@${start.t}`);
+      if (Math.hypot(...sole.map((v, i) => v - want[i])) <= PLANT_TOL) continue;
+      const chain = IK_CHAINS[foot];
+      for (const j of chain.joints) keyAt(anim, kf, j);
+      const base = sample(anim, kf.t);
+      const { rotations } = solveChain(foot, want, base, Object.fromEntries(chain.joints.map(j => [j, kf.poses[j].rot])), to, { flat: false });
+      for (const [part, r] of Object.entries(rotations)) kf.poses[part].rot = r.map(v => round(v, 2));
+      corrected++;
+    }
+    delete kf.contact;
+  }
+  const lifted = groundBetween(anim, to);
+  if (lifted) fixes.push({ code: 'liftedBetween', count: lifted });
+  return { anim, warnings: [], fixes, corrected, issues: inspect(anim, to) };
 }
 
 // ---------- Import from Studio ----------
@@ -461,7 +556,7 @@ export function prepare(input, { ground = true, literal = false } = {}) {
 // [[name, weight, [12 CFrame comps], style, dir]], markers: [[name, value]] }] }.
 // Legacy "Cubic" runs In/Out reversed in Roblox; Constant only holds with direction Out.
 const IMPORT_EASE = { Linear: () => 'Linear', Constant: () => 'Constant', CubicV2: dir => dir, Cubic: dir => (dir === 'In' ? 'Out' : dir === 'Out' ? 'In' : 'InOut') };
-export function fromStudio(data) {
+export function fromStudio(data, rig = RIG_R15) {
   const notes = [];
   const keyframes = [], events = [];
   for (const kf of data.keyframes ?? []) {
@@ -476,8 +571,8 @@ export function fromStudio(data) {
     for (const [name, value] of kf.markers ?? []) events.push({ t: kf.t, name, value });
     if (Object.keys(poses).length || !(kf.markers ?? []).length) keyframes.push({ t: kf.t, poses });
   }
-  const { anim, warnings } = normalize({ name: data.name, loop: data.loop, priority: data.priority, keyframes, events });
-  return { anim, warnings: [...notes, ...warnings], fixes: [], issues: inspect(anim) };
+  const { anim, warnings } = normalize({ name: data.name, loop: data.loop, priority: data.priority, keyframes, events }, {}, rig);
+  return { anim, warnings: [...notes, ...warnings], fixes: [], issues: inspect(anim, rig) };
 }
 
 // ---------- Export ----------

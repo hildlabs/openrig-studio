@@ -51,6 +51,15 @@ OpenRig Studio talks to Roblox Studio through the MCP server that ships with Stu
 - **Play on my avatar** plays it on your character during a playtest (F5). The playtest avatar must be R15.
 - **Import from Studio** brings a version you edited in the Animation Editor back as the newest version of the clip.
 
+### Your own avatar or other proportions
+
+Clips are made for the default blocky R15 body. To fit one to your avatar, an Rthro body or a scaled character:
+
+1. In Studio, insert the rig (**Avatar › Rig Builder › My Avatar** inserts yours) and select it.
+2. In the editor, open **Clip › Rig › Import selected rig from Studio…**
+
+The clip gets a new version for that body: root motion scales with it, planted feet stay planted and the body stays on the ground. The preview shows its proportions, and **Play in Studio** builds the preview rig from it. Later requests for that clip are fitted the same way. Rigs can be renamed or deleted in Settings.
+
 Without the bridge you can still **Export › Download .rbxmx** and use *Insert from File* in Studio, or copy a Luau snippet that builds the KeyframeSequence.
 
 If no Studio window shows up, keep the place open and check that Roblox Studio's built-in MCP server is available; on unusual installs set the path to `StudioMCP` in Settings.
@@ -70,7 +79,7 @@ Details and the Roblox measurements behind the preview: [docs/how-it-works.md](d
 OpenRig Studio gives you a solid first draft, not a finished hand-keyed animation. Plan to polish important clips in the Animation Editor.
 
 - **R15 only.** No R6, no custom or non-humanoid rigs.
-- **Made for default R15 proportions.** The rotations play on any R15 rig, but IK, planted feet and grounding are calculated for the standard blocky body. On Rthro or scaled avatars feet can slide or sink and hands miss their targets.
+- **Other proportions are fitted, not re-animated.** Choosing your avatar's rig fixes feet and body height, but arms keep their angles: on longer or shorter arms, claps and hand contacts can miss or overlap.
 - **It takes a while.** With Claude Code · Opus 5.5 · high (the default) a clip took 1 to 3.5 minutes in the benchmark, about 2 on average. Faster models and lower effort are quicker but less reliable.
 - **It uses your plan's limits.** One clip with visual review is two model calls and 6,000 to 22,000 output tokens. Free for the app, not free for your usage quota.
 - **Turning on the spot is the weak spot.** Planted feet still slide during spins and sitting down. Fast arm motions such as a cheer can snap between two keys; the checks flag these.

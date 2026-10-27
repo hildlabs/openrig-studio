@@ -73,7 +73,7 @@ function boxCorners(c, size) {
   return out;
 }
 
-function drawCell(cv, ox, oy, w, h, world, cam, scale, center) {
+function drawCell(cv, ox, oy, w, h, world, cam, scale, center, rig) {
   const zbuf = new Float32Array(w * h).fill(Infinity);
   const proj = v => {
     const d = [v[0] - center[0], v[1] - center[1], v[2] - center[2]];
@@ -100,7 +100,7 @@ function drawCell(cv, ox, oy, w, h, world, cam, scale, center) {
   const quad = (p, color, bias) => { tri(p[0], p[1], p[2], color, bias); tri(p[0], p[2], p[3], color, bias); };
   const g = 7;
   quad([[-g, 0, -g], [g, 0, -g], [g, 0, g], [-g, 0, g]].map(proj), GROUND, 0.02);
-  const parts = Object.entries(RIG_R15.parts).filter(([n]) => n !== RIG_R15.root).map(([n, size]) => ({ cf: world[n], size, color: colorOf(n) }));
+  const parts = Object.entries(rig.parts).filter(([n]) => n !== rig.root).map(([n, size]) => ({ cf: world[n], size, color: colorOf(n) }));
   const face = FACE.map(f => ({ cf: { p: point(world[f.part], f.center), R: world[f.part].R }, size: f.size, color: COLORS.face }));
   for (const b of parts) {
     const c = boxCorners(b.cf, b.size).map(v => [v[0], 0.001, v[2]]).map(proj);
@@ -118,7 +118,7 @@ function drawCell(cv, ox, oy, w, h, world, cam, scale, center) {
 }
 
 // Grid of frames: one row per view, one column per time. Returns { png, times, cell, views }.
-export function renderSheet(anim, { frames, cell, views = ['threeQuarter', 'side'], labels = true } = {}) {
+export function renderSheet(anim, { frames, cell, views = ['threeQuarter', 'side'], labels = true, rig = RIG_R15 } = {}) {
   const d = duration(anim);
   // ~8 frames per second so fast transitions and pops show up between two pictures.
   const n = frames ?? Math.max(6, Math.min(17, Math.round(d / 0.125) + 1));
@@ -128,12 +128,12 @@ export function renderSheet(anim, { frames, cell, views = ['threeQuarter', 'side
   const cv = new Canvas(cw * n, ch * views.length, BG);
   // Fixed framing so root motion and jump height stay visible.
   let top = 6.2;
-  const worlds = times.map(t => solve(sample(anim, t)));
+  const worlds = times.map(t => solve(sample(anim, t), rig));
   for (const w of worlds) top = Math.max(top, w.Head.p[1] + 1.2);
   const scale = Math.min(cw / 6.5, (ch * 0.92) / (top + 0.4));
   const center = [0, top / 2 - 0.1, 0];
   worlds.forEach((world, i) => {
-    views.forEach((v, r) => drawCell(cv, i * cw, r * ch, cw, ch, world, VIEWS[v], scale, center));
+    views.forEach((v, r) => drawCell(cv, i * cw, r * ch, cw, ch, world, VIEWS[v], scale, center, rig));
     if (labels) text(cv, i * cw + 6, 6, `${times[i].toFixed(2)}s`, LABEL);
   });
   for (let i = 1; i < n; i++) cv.rect(i * cw, 0, 1, cv.h, LINE);
@@ -142,4 +142,4 @@ export function renderSheet(anim, { frames, cell, views = ['threeQuarter', 'side
 }
 
 // Small single-row strip for the library.
-export const renderStrip = anim => renderSheet(anim, { frames: 5, cell: [64, 84], views: ['threeQuarter'], labels: false });
+export const renderStrip = (anim, rig) => renderSheet(anim, { frames: 5, cell: [64, 84], views: ['threeQuarter'], labels: false, rig });

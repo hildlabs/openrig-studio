@@ -8,7 +8,9 @@ import { listProviders, testProvider } from './providers/index.js';
 import * as lib from './library.js';
 import { startJob, getJob, startCompare, compareStatus, listCompares } from './generate.js';
 import * as studio from './studio.js';
-import { prepare, fromStudio, toRbxmx, toLuauBuilder } from '../core/anim.js';
+import * as rigs from './rigs.js';
+import { prepare, retarget, fromStudio, toRbxmx, toLuauBuilder } from '../core/anim.js';
+import { RIG_R15 } from '../core/rig.js';
 import { renderSheet, renderStrip } from '../core/render.js';
 
 const PORT = Number(process.env.PORT) || 4330;
@@ -31,6 +33,7 @@ async function readBody(req) {
 }
 const fileName = name => lib.slug(name).replace(/-/g, '_');
 const engineOf = b => ({ provider: String(b.provider ?? ''), model: String(b.model ?? ''), effort: String(b.effort ?? '') });
+const bodyOf = async id => (id ? rigs.loadRig(id).catch(() => null) : null);
 const entryAnim = (clip, entry) => clip.history.find(h => h.id === Number(entry))?.anim ?? clip.anim;
 
 async function settingsView() {
@@ -71,7 +74,7 @@ const routes = [
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/save$/, async (req, [id]) => {
     const clip = await lib.loadClip(id);
     const b = await readBody(req);
-    lib.addEntry(clip, prepare({ ...b.anim, name: clip.name }, { ground: b.ground !== false }), 'edited');
+    lib.addEntry(clip, prepare({ ...b.anim, name: clip.name }, { ground: b.ground !== false }, await rigs.rigOf(clip)), 'edited');
     return lib.saveClip(clip);
   }],
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/restore$/, async (req, [id]) => {
@@ -83,11 +86,38 @@ const routes = [
     return lib.saveClip(clip);
   }],
   ['GET', /^\/api\/clips\/([a-z0-9-]+)\/sheet$/, async (req, [id], url) => {
-    const { times, cell, views } = renderSheet(entryAnim(await lib.loadClip(id), url.searchParams.get('entry')));
+    const clip = await lib.loadClip(id);
+    const { times, cell, views } = renderSheet(entryAnim(clip, url.searchParams.get('entry')), { rig: await rigs.rigOf(clip) });
     return { times, cell, views };
   }],
-  ['GET', /^\/api\/clips\/([a-z0-9-]+)\/sheet\.png$/, async (req, [id], url) => ({ png: renderSheet(entryAnim(await lib.loadClip(id), url.searchParams.get('entry'))).png })],
-  ['GET', /^\/api\/clips\/([a-z0-9-]+)\/strip\.png$/, async (req, [id]) => ({ png: renderStrip((await lib.loadClip(id)).anim).png })],
+  ['GET', /^\/api\/clips\/([a-z0-9-]+)\/sheet\.png$/, async (req, [id], url) => {
+    const clip = await lib.loadClip(id);
+    return { png: renderSheet(entryAnim(clip, url.searchParams.get('entry')), { rig: await rigs.rigOf(clip) }).png };
+  }],
+  ['GET', /^\/api\/clips\/([a-z0-9-]+)\/strip\.png$/, async (req, [id]) => {
+    const clip = await lib.loadClip(id);
+    return { png: renderStrip(clip.anim, await rigs.rigOf(clip)).png };
+  }],
+  // Moves the clip to another rig: the current version is retargeted and becomes a new version.
+  ['POST', /^\/api\/clips\/([a-z0-9-]+)\/rig$/, async (req, [id]) => {
+    const clip = await lib.loadClip(id);
+    const { rig: next = '' } = await readBody(req);
+    const to = next ? await rigs.loadRig(String(next)) : null;
+    if ((to?.id ?? '') === (clip.rig ?? '')) return clip;
+    const result = retarget(clip.anim, await rigs.rigOf(clip), to?.rig ?? RIG_R15);
+    if (to) clip.rig = to.id; else delete clip.rig;
+    lib.addEntry(clip, result, 'retargeted', to?.name ?? 'R15');
+    return lib.saveClip(clip);
+  }],
+
+  ['GET', /^\/api\/rigs$/, async () => rigs.listRigs()],
+  ['POST', /^\/api\/rigs\/import$/, async (req) => {
+    const { studio: studioId, name } = await readBody(req);
+    const found = await studio.readRig(String(studioId));
+    return rigs.addRig(name || found.name, found.rig, found.description);
+  }],
+  ['PATCH', /^\/api\/rigs\/([a-z0-9-]+)$/, async (req, [id]) => rigs.renameRig(id, (await readBody(req)).name)],
+  ['DELETE', /^\/api\/rigs\/([a-z0-9-]+)$/, async (req, [id]) => rigs.deleteRig(id)],
   ['GET', /^\/api\/clips\/([a-z0-9-]+)\/luau$/, async (req, [id]) => ({ text: toLuauBuilder((await lib.loadClip(id)).anim) })],
   ['GET', /^\/api\/export\.rbxmx$/, async (req, m, url) => {
     const ids = (url.searchParams.get('ids') ?? '').split(',').filter(Boolean);
@@ -122,19 +152,22 @@ const routes = [
   ['POST', /^\/api\/studio\/push$/, async (req) => {
     const { studio: studioId, ids = [] } = await readBody(req);
     const clips = await Promise.all(ids.map(id => lib.loadClip(id)));
-    return { message: await studio.pushClips(String(studioId), clips.map(c => c.anim)) };
+    // The preview rig gets the clips' body when they all share one.
+    const shared = new Set(clips.map(c => c.rig ?? '')).size === 1 ? clips[0]?.rig : null;
+    return { message: await studio.pushClips(String(studioId), clips.map(c => c.anim), await bodyOf(shared)) };
   }],
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/studio$/, async (req, [id]) => {
     const { studio: studioId, action } = await readBody(req);
-    const { anim } = await lib.loadClip(id);
-    if (action === 'preview') return { message: await studio.previewClip(String(studioId), anim) };
+    const { anim, rig } = await lib.loadClip(id);
+    const body = await bodyOf(rig);
+    if (action === 'preview') return { message: await studio.previewClip(String(studioId), anim, body) };
     if (action === 'playtest') return { message: await studio.playtestClip(String(studioId), anim) };
-    return { message: await studio.pushClips(String(studioId), [anim]) };
+    return { message: await studio.pushClips(String(studioId), [anim], body) };
   }],
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/pull$/, async (req, [id]) => {
     const { studio: studioId, path: seqPath } = await readBody(req);
     const clip = await lib.loadClip(id);
-    const result = fromStudio(await studio.pullSave(String(studioId), String(seqPath)));
+    const result = fromStudio(await studio.pullSave(String(studioId), String(seqPath)), await rigs.rigOf(clip));
     result.anim.name = clip.name;
     lib.addEntry(clip, result, 'imported', String(seqPath).split('.').pop());
     return lib.saveClip(clip);
