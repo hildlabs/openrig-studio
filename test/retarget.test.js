@@ -73,3 +73,36 @@ test('root motion scales with the hip height', () => {
   const peak = anim => Math.max(...anim.keyframes.map(k => k.poses.LowerTorso?.pos[1] ?? 0));
   assert.ok(Math.abs(peak(out) - peak(src) * s) < 0.05, `peak ${peak(src)} × ${s.toFixed(2)} vs ${peak(out)}`);
 });
+
+// ---------- Rigs read from Studio (src/server/rigs.js) ----------
+import { checkRig } from '../src/server/rigs.js';
+import { anglesDeg, mul, cf, inv } from '../src/core/rig.js';
+
+const fromStudio = rig => ({ parts: rig.parts, joints: rig.joints.map(({ part0, part1, c0, c1 }) => ({ part0, part1, c0, c1 })), hipHeight: rig.hipHeight });
+
+test('a rig from Studio needs every R15 joint and stands on the ground', () => {
+  const data = fromStudio(RIGS['long legs']);
+  const rig = checkRig({ ...data, hipHeight: 5 });
+  assert.ok(Math.abs(rig.hipHeight - RIGS['long legs'].hipHeight) < 1e-3, 'hip height comes from the body, not the stored value');
+  assert.ok(Math.abs(lowestY(solve({}, rig), FEET, rig)) < 1e-3);
+  assert.throws(() => checkRig({ ...data, joints: data.joints.filter(j => j.part1 !== 'LeftFoot') }), /LeftAnkle is missing/);
+  assert.throws(() => checkRig({ ...data, parts: { ...data.parts, Head: [1, -1, 1] } }), /Head is missing/);
+});
+
+test('joints with rotated attachments solve like Roblox (Part0 * C0 * T * C1⁻¹)', () => {
+  // Turning both attachments of a joint by the same rotation must not move anything at rest.
+  const R = anglesDeg([0, 90, 0]);
+  const data = fromStudio(RIG_R15);
+  data.joints = data.joints.map(j => (j.part1 === 'LeftUpperArm' ? { ...j, c0R: R, c1R: R } : j));
+  const rig = checkRig(data);
+  assert.ok(rig.joints.find(j => j.part1 === 'LeftUpperArm').c0R, 'a real rotation is kept');
+  const hand = r => { const w = solve({}, r); return mul(inv(w.UpperTorso), w.LeftHand).p; };
+  assert.ok(Math.hypot(...hand(RIG_R15).map((v, i) => v - hand(rig)[i])) < 1e-6);
+  // A Transform is applied in the attachment's frame: with C0 turned 90° about y, a turn about
+  // x in the Transform is a turn about z of the arm.
+  const T = { LeftUpperArm: cf([0, 0, 0], anglesDeg([90, 0, 0])) };
+  const w = solve(T, rig), j = rig.joints.find(x => x.part1 === 'LeftUpperArm');
+  const want = mul(mul(mul(w.UpperTorso, cf(j.c0, j.c0R)), T.LeftUpperArm), inv(cf(j.c1, j.c1R)));
+  assert.ok(Math.hypot(...want.p.map((v, i) => v - w.LeftUpperArm.p[i])) < 1e-9);
+  assert.ok(checkRig(fromStudio(RIG_R15)).joints.every(x => !x.c0R && !x.c1R), 'identity rotations are dropped');
+});

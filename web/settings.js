@@ -4,7 +4,7 @@ import { t } from './i18n.js';
 import { icon } from './icons.js';
 import { store, reloadProviders, refreshStudios } from './app.js';
 
-let root, view = null;
+let root, view = null, rigs = [];
 
 export function mount(el) {
   root = el;
@@ -14,10 +14,11 @@ export function mount(el) {
 }
 export async function activate() {
   view = await api('/api/settings');
-  await reloadProviders();
+  await Promise.all([reloadProviders(), loadRigs()]);
   render();
 }
 export const relabel = () => { if (view) render(); };
+async function loadRigs() { try { rigs = await api('/api/rigs'); } catch { rigs = []; } }
 
 function providerBlock(p) {
   const ok = p.available;
@@ -51,6 +52,9 @@ function render() {
       <p class="${view.studioMcpFound ? '' : 'muted'}">${view.studioMcpFound ? t('set.studioFound', { path: `<code>${esc(view.studioMcpFound)}</code>` }) : t('set.studioMissing')}</p>
       <div class="keyrow" style="display:flex;gap:8px"><input type="text" style="flex:1" data-field="studioMcpPath" value="${esc(view.studioMcpPath)}" placeholder="${t('set.path')}"><button class="btn" data-save="studioMcpPath">${t('set.save')}</button><button class="btn" data-studio>${icon('refresh')}${t('studio.refresh')}</button></div>
     </section>
+    <section class="card"><h2>${t('set.rigs')}</h2><p>${t('set.rigsBody')}</p>
+      ${rigs.length ? rigs.map(r => `<div class="keyrow" style="display:flex;gap:8px"><input type="text" style="flex:1" data-rig-name="${esc(r.id)}" value="${esc(r.name)}" aria-label="${t('set.rigName')}"><button class="btn" data-rig-save="${esc(r.id)}">${t('set.save')}</button><button class="btn danger" data-rig-delete="${esc(r.id)}">${icon('trash')}${t('set.rigDelete')}</button></div>`).join('') : `<p class="muted">${t('set.rigsNone')}</p>`}
+    </section>
     <section class="card"><h2>${t('set.style')}</h2><p>${t('set.styleBody')}</p>
       <textarea rows="3" data-field="style">${esc(view.style)}</textarea>
       <div><button class="btn" data-save="style">${t('set.save')}</button></div>
@@ -79,6 +83,16 @@ async function onClick(e) {
     return;
   }
   if (e.target.closest('[data-studio]')) refreshStudios();
+  const rigSave = e.target.closest('[data-rig-save]'), rigDelete = e.target.closest('[data-rig-delete]');
+  if (rigSave || rigDelete) {
+    try {
+      if (rigSave) await api(`/api/rigs/${rigSave.dataset.rigSave}`, { method: 'PATCH', body: { name: $(`[data-rig-name="${rigSave.dataset.rigSave}"]`, root).value } });
+      else await api(`/api/rigs/${rigDelete.dataset.rigDelete}`, { method: 'DELETE' });
+      await loadRigs();
+      toast(t(rigSave ? 'set.saved' : 'set.rigDeleted'));
+      render();
+    } catch (err) { toast(err.message, true); }
+  }
 }
 async function onToggle(e) {
   const field = e.target.dataset.toggle;

@@ -40,10 +40,23 @@ The preview samples clips the way Roblox does. These rules were measured in Robl
 | Always the shorter way | Both blends first flip the second rotation into the first one's hemisphere. |
 | New R15 rigs use AnimationConstraint | `CreateHumanoidModelFromDescription` builds joints as `AnimationConstraint`s (Attachment0 · Transform = Attachment1), not `Motor6D`s; the math is the same. |
 | Registered sequences load asynchronously | After `KeyframeSequenceProvider:RegisterKeyframeSequence`, wait for `track.Length > 0` before stepping. |
+| Root offsets are never scaled | A `LowerTorso` pose of (0, 1, 0.5) moves the joint by exactly that on the default rig, a 150 % rig and an Rthro avatar alike. A clip made for one body jumps relatively lower on a bigger one. |
 
 ## Rig data
 
-Part sizes and joint offsets (`src/core/rig.js`) come from the attachments of Studio's default R15 rig: `Part1.CFrame = Part0.CFrame * C0 * Transform * C1:Inverse()`, with C0/C1 being pure translations. The rest pose stands with the soles at y = 0.
+Part sizes and joint offsets (`src/core/rig.js`) come from the attachments of Studio's default R15 rig: `Part1.CFrame = Part0.CFrame * C0 * Transform * C1:Inverse()`. The default rig's C0/C1 are pure translations; imported rigs may carry rotations (`c0R`, `c1R`). The rest pose stands with the soles at y = 0. Every function that works on a body takes the rig as a parameter; models always work on the default one.
+
+## Other proportions (`retarget` in `src/core/anim.js`)
+
+A clip can be made for an imported rig (`data/rigs`, read from the rig selected in Studio: part sizes, Motor6D or AnimationConstraint offsets, HumanoidDescription). Moving a clip to another rig:
+
+1. Joint rotations stay as they are.
+2. Root motion scales with the ratio of the hip heights, since Roblox doesn't scale it (see above).
+3. Every keyframe is grounded again on the new body; keyframes where both feet were off the ground in the source stay in the air.
+4. A foot that stands flat and still in the source is held where it stood on the new legs when that plant began. Only if it drifts more than 0.04 studs does the leg get IK, and the foot keeps its own rotation.
+5. Keys added to a joint that was only interpolated there split the segment with the easings that follow its original curve best.
+
+Generating for such a clip: the model sees the current version retargeted to the default body, and its answer is retargeted onto the clip's rig. Checked in Studio on an Rthro avatar: the preview places every part within 0.003 studs of where Roblox does.
 
 ## Providers (`src/server/providers/`)
 

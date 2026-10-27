@@ -227,13 +227,18 @@ if not model then return "ERR:Select a character rig in Studio first (a model wi
 local hum = model:FindFirstChildOfClass("Humanoid")
 if hum.RigType ~= Enum.HumanoidRigType.R15 then return "ERR:That rig is R6. Only R15 rigs are supported so far." end
 local parts, joints = {}, {}
+local function joint(part0, part1, c0, c1)
+	local a, b = { c0:GetComponents() }, { c1:GetComponents() }
+	table.insert(joints, { part0 = part0.Name, part1 = part1.Name,
+		c0 = { a[1], a[2], a[3] }, c0R = { table.unpack(a, 4, 12) },
+		c1 = { b[1], b[2], b[3] }, c1R = { table.unpack(b, 4, 12) } })
+end
 for _, d in model:GetDescendants() do
 	if d:IsA("BasePart") and d.Parent == model then parts[d.Name] = { d.Size.X, d.Size.Y, d.Size.Z } end
-	if d:IsA("Motor6D") and d.Part0 and d.Part1 then
-		local a, b = { d.C0:GetComponents() }, { d.C1:GetComponents() }
-		table.insert(joints, { part0 = d.Part0.Name, part1 = d.Part1.Name,
-			c0 = { a[1], a[2], a[3] }, c0R = { table.unpack(a, 4, 12) },
-			c1 = { b[1], b[2], b[3] }, c1R = { table.unpack(b, 4, 12) } })
+	-- Classic joints are Motor6Ds; newer avatars use AnimationConstraints, whose attachments hold the offsets.
+	if d:IsA("Motor6D") and d.Part0 and d.Part1 then joint(d.Part0, d.Part1, d.C0, d.C1) end
+	if d:IsA("AnimationConstraint") and d.Attachment0 and d.Attachment1 then
+		joint(d.Attachment0.Parent, d.Attachment1.Parent, d.Attachment0.CFrame, d.Attachment1.CFrame)
 	end
 end
 local description
