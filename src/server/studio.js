@@ -81,11 +81,19 @@ async function luau(s, studioId, code, datamodel = 'Edit') {
 
 const seqFn = anim => `(function()\n${toLuauBuilder(anim)}\nend)`;
 // The preview rig appears ~14 studs in front of the Studio camera, standing on whatever is below.
-const ENSURE_RIG = `local function ensureRig()
+// For a clip made for an imported rig it gets that rig's HumanoidDescription (scales and body
+// parts); a preview rig of another body is replaced.
+const DESCRIPTION_KEYS = ['BodyTypeScale', 'DepthScale', 'HeadScale', 'HeightScale', 'ProportionScale', 'WidthScale', 'Head', 'Torso', 'LeftArm', 'RightArm', 'LeftLeg', 'RightLeg'];
+const ensureRig = (body = null) => `local function ensureRig()
+	local body = ${luaStr(body?.id ?? 'R15')}
 	local rig = workspace:FindFirstChild("${RIG_NAME}")
+	if rig and (rig:GetAttribute("OpenRigBody") or "R15") ~= body then rig:Destroy() rig = nil end
 	if rig then return rig end
-	rig = game:GetService("Players"):CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R15)
+	local desc = Instance.new("HumanoidDescription")
+${DESCRIPTION_KEYS.filter(k => Number.isFinite(body?.description?.[k])).map(k => `	desc.${k} = ${Number(body.description[k])}
+`).join('')}	rig = game:GetService("Players"):CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
 	rig.Name = "${RIG_NAME}"
+	rig:SetAttribute("OpenRigBody", body)
 	local cam = workspace.CurrentCamera
 	local look = cam.CFrame.LookVector
 	local flat = Vector3.new(look.X, 0, look.Z)
@@ -101,8 +109,8 @@ const ENSURE_RIG = `local function ensureRig()
 end`;
 
 // Saves clips where the Animation Editor keeps its saves: ServerStorage > RBX_ANIMSAVES > rig.
-function pushLuau(anims) {
-  return `${ENSURE_RIG}
+function pushLuau(anims, body) {
+  return `${ensureRig(body)}
 local rig = ensureRig()
 local storage = game:GetService("ServerStorage")
 local saves = storage:FindFirstChild("RBX_ANIMSAVES")
@@ -130,9 +138,9 @@ game:GetService("Selection"):Set({ rig })
 return #names .. " → " .. slot:GetFullName()`;
 }
 // Plays a clip in the edit viewport via Animator:StepAnimations (max. 20 s).
-function previewLuau(anim, loops) {
+function previewLuau(anim, loops, body) {
   return `local seq = ${seqFn(anim)}()
-${ENSURE_RIG}
+${ensureRig(body)}
 local rig = ensureRig()
 local hum = rig:FindFirstChildOfClass("Humanoid")
 local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
@@ -207,14 +215,45 @@ for _, kf in seq:GetKeyframes() do
 end
 return game:GetService("HttpService"):JSONEncode(out)`;
 
+// Reads the proportions of the selected character rig (or the rig a selected part belongs to):
+// part sizes, Motor6D offsets and, if it has one, its HumanoidDescription for the preview rig.
+const READ_RIG = `local model
+for _, inst in game:GetService("Selection"):Get() do
+	local m = inst:IsA("Model") and inst or inst:FindFirstAncestorOfClass("Model")
+	while m and not m:FindFirstChildOfClass("Humanoid") do m = m:FindFirstAncestorOfClass("Model") end
+	if m then model = m break end
+end
+if not model then return "ERR:Select a character rig in Studio first (a model with a Humanoid). Avatar > Rig Builder > My Avatar inserts yours." end
+local hum = model:FindFirstChildOfClass("Humanoid")
+if hum.RigType ~= Enum.HumanoidRigType.R15 then return "ERR:That rig is R6. Only R15 rigs are supported so far." end
+local parts, joints = {}, {}
+for _, d in model:GetDescendants() do
+	if d:IsA("BasePart") and d.Parent == model then parts[d.Name] = { d.Size.X, d.Size.Y, d.Size.Z } end
+	if d:IsA("Motor6D") and d.Part0 and d.Part1 then
+		local a, b = { d.C0:GetComponents() }, { d.C1:GetComponents() }
+		table.insert(joints, { part0 = d.Part0.Name, part1 = d.Part1.Name,
+			c0 = { a[1], a[2], a[3] }, c0R = { table.unpack(a, 4, 12) },
+			c1 = { b[1], b[2], b[3] }, c1R = { table.unpack(b, 4, 12) } })
+	end
+end
+local description
+local ok, desc = pcall(function() return hum:FindFirstChildOfClass("HumanoidDescription") or hum:GetAppliedDescription() end)
+if ok and desc then
+	description = {}
+	for _, key in { "BodyTypeScale", "DepthScale", "HeadScale", "HeightScale", "ProportionScale", "WidthScale", "Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg" } do
+		description[key] = desc[key]
+	end
+end
+return game:GetService("HttpService"):JSONEncode({ name = model.Name, rig = { parts = parts, joints = joints, hipHeight = hum.HipHeight }, description = description })`;
+
 const STOP_PLAYTEST = 'Roblox Studio is running a playtest. Stop it first.';
-export const pushClips = (studioId, anims) => session(async s => {
+export const pushClips = (studioId, anims, body = null) => session(async s => {
   if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
-  return luau(s, studioId, pushLuau(anims));
+  return luau(s, studioId, pushLuau(anims, body));
 });
-export const previewClip = (studioId, anim) => session(async s => {
+export const previewClip = (studioId, anim, body = null) => session(async s => {
   if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
-  return luau(s, studioId, previewLuau(anim, anim.loop ? 3 : 2));
+  return luau(s, studioId, previewLuau(anim, anim.loop ? 3 : 2, body));
 });
 export const playtestClip = (studioId, anim) => session(async s => {
   if (await inEdit(s, studioId) !== 'play') throw new Error('Start a playtest in Roblox Studio first (F5).');
@@ -225,3 +264,7 @@ export const listSaves = studioId => session(async s => {
   return JSON.parse(await luau(s, studioId, LIST_SAVES));
 });
 export const pullSave = (studioId, fullName) => session(async s => JSON.parse(await luau(s, studioId, pullLuau(fullName))));
+export const readRig = studioId => session(async s => {
+  if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
+  return JSON.parse(await luau(s, studioId, READ_RIG));
+});

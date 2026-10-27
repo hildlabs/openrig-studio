@@ -556,7 +556,7 @@ export function retarget(input, from, to) {
 // [[name, weight, [12 CFrame comps], style, dir]], markers: [[name, value]] }] }.
 // Legacy "Cubic" runs In/Out reversed in Roblox; Constant only holds with direction Out.
 const IMPORT_EASE = { Linear: () => 'Linear', Constant: () => 'Constant', CubicV2: dir => dir, Cubic: dir => (dir === 'In' ? 'Out' : dir === 'Out' ? 'In' : 'InOut') };
-export function fromStudio(data) {
+export function fromStudio(data, rig = RIG_R15) {
   const notes = [];
   const keyframes = [], events = [];
   for (const kf of data.keyframes ?? []) {
@@ -571,8 +571,8 @@ export function fromStudio(data) {
     for (const [name, value] of kf.markers ?? []) events.push({ t: kf.t, name, value });
     if (Object.keys(poses).length || !(kf.markers ?? []).length) keyframes.push({ t: kf.t, poses });
   }
-  const { anim, warnings } = normalize({ name: data.name, loop: data.loop, priority: data.priority, keyframes, events });
-  return { anim, warnings: [...notes, ...warnings], fixes: [], issues: inspect(anim) };
+  const { anim, warnings } = normalize({ name: data.name, loop: data.loop, priority: data.priority, keyframes, events }, {}, rig);
+  return { anim, warnings: [...notes, ...warnings], fixes: [], issues: inspect(anim, rig) };
 }
 
 // ---------- Export ----------

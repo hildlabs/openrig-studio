@@ -108,9 +108,15 @@ export function relabel() {
   if (S.clip) { renderChat(); renderLower(); renderInspector(); renderClipbar(); }
 }
 
+// Rigs with other proportions (data/rigs); a clip's `rig` names the one it is made for.
+let rigs = [];
+const rigData = clip => rigs.find(r => r.id === clip?.rig)?.rig ?? RIG_R15;
+async function loadRigs() { try { rigs = await api('/api/rigs'); } catch { rigs = []; } }
+
 export async function activate() {
   if (store.providers.length) renderEngine();
-  if (S.clip) return;
+  await loadRigs();
+  if (S.clip) { viewer.setRig(rigData(S.clip)); renderInspector(); return; }
   const { clips } = await api('/api/clips');
   const want = prefs.get('clip', null);
   const pick = clips.find(c => c.id === want) ?? [...clips].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
@@ -129,6 +135,7 @@ function setClip(clip, { keepTime = false, keepUndo = false } = {}) {
   S.tracks = buildTracks(S.anim);
   S.dirty = false;
   if (!keepTime || S.t > dur()) S.t = 0;
+  viewer.setRig(rigData(clip));
   if (!keepTime) viewer.fit(S.tracks, dur());
   sheetMeta = null;
   prefs.set('clip', clip.id);
@@ -410,6 +417,7 @@ function renderInspector() {
   html += `<div class="section"><h3>${t('insp.clip')}</h3>
     <div class="line"><label class="check"><input type="checkbox" data-loop ${S.anim.loop ? 'checked' : ''}>${t('clip.loop')}</label>
     <label style="min-width:0">${t('insp.priority')}</label><select data-prio>${['Idle', 'Movement', 'Action', 'Action2', 'Action3', 'Action4'].map(p => `<option${p === S.anim.priority ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
+    <div class="line" title="${esc(t('insp.rigHint'))}"><label>${t('insp.rig')}</label><select data-rig><option value="">${t('insp.rigDefault')}</option>${rigs.map(r => `<option value="${esc(r.id)}"${r.id === S.clip.rig ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}<option value="${IMPORT_RIG}">${t('insp.rigImport')}</option></select></div>
     <div class="line"><select data-evname>${['Footstep', 'Sound', 'VFX', 'Hit'].map(n => `<option>${n}</option>`).join('')}</select><button class="btn" data-act="addEv">${t('insp.addEvent', { t: S.t.toFixed(2) })}</button></div>
     ${S.anim.events.map((e, i) => `<div class="line num"><span>${e.t.toFixed(2)} s</span><b>${esc(e.name)}</b><span class="muted">${esc(e.value)}</span><button class="btn icon quiet" data-act="delEv" data-i="${i}" title="${t('actions.delete')}">${icon('trash')}</button></div>`).join('')}</div>`;
   html += `<div class="savebar${S.dirty ? '' : ' hidden'}"><span class="grow">${t('insp.unsaved')}</span><button class="btn" data-act="discard">${t('insp.discard')}</button><button class="btn primary" data-act="save">${t('insp.save')}</button></div>`;
@@ -425,6 +433,23 @@ async function save() {
   if (!S.clip) return;
   setClip(await api(`/api/clips/${S.clip.id}/save`, { method: 'POST', body: { anim: S.anim } }), { keepTime: true, keepUndo: true });
   toast(t('done.saved'));
+}
+// Moving a clip to another rig retargets its current version on the server (a new version).
+const IMPORT_RIG = '__import';
+async function switchRig(value) {
+  let rig = value;
+  try {
+    if (rig === IMPORT_RIG) {
+      const studio = studioId();
+      if (!studio) { renderInspector(); return; }
+      toast(t('rig.importing'));
+      rig = (await api('/api/rigs/import', { method: 'POST', body: { studio } })).id;
+      await loadRigs();
+    }
+    if (S.dirty) await save();
+    setClip(await api(`/api/clips/${S.clip.id}/rig`, { method: 'POST', body: { rig } }), { keepTime: true });
+    toast(t('rig.switched', { rig: rigs.find(r => r.id === rig)?.name ?? t('insp.rigDefault') }));
+  } catch (e) { toast(e.message, true); renderInspector(); }
 }
 function selectPart(part) {
   S.part = part;
@@ -567,6 +592,7 @@ function wire() {
     else if (el.matches('[data-air]') && kf) { record(); if (el.checked) kf.contact = 'air'; else delete kf.contact; changed(); }
     else if (el.matches('[data-loop]')) { record(); S.anim.loop = el.checked; changed({ structure: true }); }
     else if (el.matches('[data-prio]')) { record(); S.anim.priority = el.value; changed(); }
+    else if (el.matches('[data-rig]')) switchRig(el.value);
     else if (el.matches('[data-kt]') && kf && ki > 0) {
       const nt = r3(snap(Number(el.value)));
       if (!(nt > 0) || S.anim.keyframes.some((k, i) => i !== ki && Math.abs(k.t - nt) < 0.0005)) { renderInspector(); return; }
