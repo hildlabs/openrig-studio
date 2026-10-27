@@ -1,7 +1,7 @@
 // Two-bone IK for the R15 limbs. The model may give target positions for hands and feet
 // (character space: x right, y up from the ground, z backwards); joint angles are solved
 // numerically (damped least squares) starting from the model's own guess, so the elbow/knee
-// direction it intended is kept. Joint limits from RIG_R15 are respected.
+// direction it intended is kept. Joint limits of the rig are respected.
 import { RIG_R15, solve, anglesDeg, cf, rotV, mulR, eulerDeg } from './rig.js';
 
 export const IK_CHAINS = {
@@ -10,7 +10,6 @@ export const IK_CHAINS = {
   RightFoot: { joints: ['RightUpperLeg', 'RightLowerLeg'], end: 'RightFoot', foot: true },
   LeftFoot: { joints: ['LeftUpperLeg', 'LeftLowerLeg'], end: 'LeftFoot', foot: true },
 };
-const FOOT_HALF = RIG_R15.parts.RightFoot[1] / 2;
 // Parameters per chain: upper x, y, z and the hinge (lower x).
 const PARAMS = [[0, 0], [0, 1], [0, 2], [1, 0]];
 const clampTo = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
@@ -23,11 +22,11 @@ function transformsFrom(rotations, base) {
 
 // base: sampled transforms {part: {p, R}} at this keyframe; rot: current [x,y,z] per joint.
 // Returns new rotations for the chain joints (+ foot) and the remaining error in studs.
-export function solveChain(name, target, base, rot) {
+export function solveChain(name, target, base, rot, rig = RIG_R15) {
   const chain = IK_CHAINS[name];
-  const want = chain.foot ? [target[0], target[1] + FOOT_HALF, target[2]] : target;
-  const lim = j => RIG_R15.limits[j];
-  const endPos = state => solve(transformsFrom(state, base))[chain.end].p;
+  const want = chain.foot ? [target[0], target[1] + rig.parts[chain.end][1] / 2, target[2]] : target;
+  const lim = j => rig.limits[j];
+  const endPos = state => solve(transformsFrom(state, base), rig)[chain.end].p;
   const err = state => { const p = endPos(state); return [want[0] - p[0], want[1] - p[1], want[2] - p[2]]; };
   const get = (s, [ji, ai]) => s[chain.joints[ji]][ai];
   const set = (s, [ji, ai], v) => { s[chain.joints[ji]][ai] = clampTo(v, lim(chain.joints[ji])[ai]); };
@@ -59,18 +58,18 @@ export function solveChain(name, target, base, rot) {
     else lambda *= 4;
     if (lambda > 1e6) break;
   }
-  if (chain.foot) state[chain.end] = flatFoot(chain, state, base);
+  if (chain.foot) state[chain.end] = flatFoot(chain, state, base, rig);
   return { rotations: state, error: en };
 }
 
 // Foot rotation that keeps the sole parallel to the ground and pointing where the hips point.
-function flatFoot(chain, state, base) {
-  const world = solve(transformsFrom(state, base));
+function flatFoot(chain, state, base, rig) {
+  const world = solve(transformsFrom(state, base), rig);
   const P = world[chain.joints[1]].R;
   const fwd = rotV(world.LowerTorso.R, [0, 0, -1]);
   const yaw = Math.atan2(-fwd[0], -fwd[2]) * 180 / Math.PI;
   const local = mulR([P[0], P[3], P[6], P[1], P[4], P[7], P[2], P[5], P[8]], anglesDeg([0, yaw, 0]));
-  return eulerDeg(local).map((v, i) => Math.round(clampTo(v, RIG_R15.limits[chain.end][i]) * 100) / 100);
+  return eulerDeg(local).map((v, i) => Math.round(clampTo(v, rig.limits[chain.end][i]) * 100) / 100);
 }
 
 function solveLinear(A, b) {

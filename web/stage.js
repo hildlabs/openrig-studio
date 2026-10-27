@@ -58,10 +58,10 @@ export function createScene() {
   return scene;
 }
 
-export function createRig(scene) {
+export function createRig(scene, rig = RIG_R15) {
   const meshes = {};
-  for (const [name, size] of Object.entries(RIG_R15.parts)) {
-    if (name === RIG_R15.root) continue;
+  for (const [name, size] of Object.entries(rig.parts)) {
+    if (name === rig.root) continue;
     const geo = new THREE.BoxGeometry(...size);
     const base = new THREE.MeshStandardMaterial({ color: COLORS[REGION(name)], roughness: 0.7 });
     const mat = name === 'Head' ? [base, base, base, base, base, new THREE.MeshStandardMaterial({ map: FACE, roughness: 0.7 })] : base;
@@ -75,8 +75,9 @@ export function createRig(scene) {
   }
   return {
     meshes,
+    data: rig,
     pose(transforms) {
-      const world = solve(transforms);
+      const world = solve(transforms, rig);
       for (const [name, mesh] of Object.entries(meshes)) {
         const { p, R } = world[name];
         mesh.matrix.set(R[0], R[1], R[2], p[0], R[3], R[4], R[5], p[1], R[6], R[7], R[8], p[2], 0, 0, 0, 1);
@@ -87,6 +88,13 @@ export function createRig(scene) {
       for (const [name, mesh] of Object.entries(meshes)) for (const m of [mesh.material].flat()) {
         m.emissive.setHex(name === part ? 0x2457e6 : 0x000000);
         m.emissiveIntensity = name === part ? 0.35 : 0;
+      }
+    },
+    dispose() {
+      for (const mesh of Object.values(meshes)) {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        for (const m of [mesh.material].flat()) m.dispose();
       }
     },
   };
@@ -135,11 +143,17 @@ export class Viewer {
       this.onPick?.(ray.intersectObjects(Object.values(this.rig.meshes), false)[0]?.object.userData.part ?? null);
     });
   }
+  // Rebuilds the body when the clip is made for another rig.
+  setRig(rig) {
+    if (this.rig.data === rig) return;
+    this.rig.dispose();
+    this.rig = createRig(this.scene, rig);
+  }
   show(tracks, t) { this.rig.pose(tracks ? sampleTracks(tracks, t) : {}); }
   // Frames the camera so the whole clip (incl. jumps) stays in view, keeping the orbit direction.
   fit(tracks, length) {
     let top = 5.6;
-    for (let t = 0; t <= length + 1e-6; t += 1 / 15) top = Math.max(top, solve(sampleTracks(tracks, t)).Head.p[1] + 0.7);
+    for (let t = 0; t <= length + 1e-6; t += 1 / 15) top = Math.max(top, solve(sampleTracks(tracks, t), this.rig.data).Head.p[1] + 0.7);
     const target = new THREE.Vector3(0, top / 2, 0);
     const dir = this.camera.position.clone().sub(this.controls.target).normalize();
     const dist = (top * 0.62) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
@@ -162,9 +176,9 @@ export class MultiViewer {
     this.renderer.setScissorTest(true);
     this.tiles = new Map();
   }
-  add(key, element) {
+  add(key, element, rig = RIG_R15) {
     const scene = createScene();
-    const tile = { element, scene, rig: createRig(scene), camera: makeCamera(), tracks: null };
+    const tile = { element, scene, rig: createRig(scene, rig), camera: makeCamera(), tracks: null };
     tile.controls = makeControls(tile.camera, element);
     this.tiles.set(key, tile);
     return tile;

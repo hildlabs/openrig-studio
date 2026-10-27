@@ -2,7 +2,8 @@
 // shared by the server, the tests and the browser.
 //
 // Joint offsets are taken from the attachments of Studio's default R15 rig.
-// Part1.CFrame = Part0.CFrame * C0 * Transform * C1:Inverse(); C0/C1 are pure translations.
+// Part1.CFrame = Part0.CFrame * C0 * Transform * C1:Inverse(). Every function that works on
+// a body takes the rig as a parameter; RIG_R15 is the default and the space models work in.
 
 export const RIG_R15 = {
   id: 'R15',
@@ -150,11 +151,13 @@ export const alignQuat = (a, b) => (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[
 export const rootCFrame = (rig = RIG_R15) => cf([0, rig.hipHeight + rig.parts[rig.root][1] / 2, 0]);
 
 // transforms: { partName: {p, R} } Motor6D.Transform per part1; missing = identity.
+// C0/C1 of the default rig are pure translations; other rigs may add rotations (c0R, c1R).
 export function solve(transforms = {}, rig = RIG_R15, root = rootCFrame(rig)) {
   const world = { [rig.root]: root };
   for (const j of rig.joints) {
     const t = transforms[j.part1] ?? IDENTITY;
-    world[j.part1] = mul(mul(mul(world[j.part0], cf(j.c0)), t), cf(j.c1.map(v => -v)));
+    const c1inv = j.c1R ? inv(cf(j.c1, j.c1R)) : cf(j.c1.map(v => -v));
+    world[j.part1] = mul(mul(mul(world[j.part0], cf(j.c0, j.c0R)), t), c1inv);
   }
   return world;
 }
