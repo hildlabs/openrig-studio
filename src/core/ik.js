@@ -22,7 +22,8 @@ function transformsFrom(rotations, base) {
 
 // base: sampled transforms {part: {p, R}} at this keyframe; rot: current [x,y,z] per joint.
 // Returns new rotations for the chain joints (+ foot) and the remaining error in studs.
-export function solveChain(name, target, base, rot, rig = RIG_R15) {
+// flat: turn the foot so its sole is parallel to the ground (off: the foot keeps its own pose).
+export function solveChain(name, target, base, rot, rig = RIG_R15, { flat = true } = {}) {
   const chain = IK_CHAINS[name];
   const want = chain.foot ? [target[0], target[1] + rig.parts[chain.end][1] / 2, target[2]] : target;
   const lim = j => rig.limits[j];
@@ -58,7 +59,7 @@ export function solveChain(name, target, base, rot, rig = RIG_R15) {
     else lambda *= 4;
     if (lambda > 1e6) break;
   }
-  if (chain.foot) state[chain.end] = flatFoot(chain, state, base, rig);
+  if (chain.foot && flat) state[chain.end] = flatFoot(chain, state, base, rig);
   return { rotations: state, error: en };
 }
 
