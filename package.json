@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.2.0",
-    "openai": "^7.43.0"
+    "openai": "^7.45.1"
   },
   "keywords": [
     "roblox",
