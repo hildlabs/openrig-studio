@@ -8,7 +8,7 @@ import { RIG_R15, RIG_R6, REGION, eulerDeg, partsOf, withDefaults } from '/core/
 import { buildTracks, sampleTracks, EASES } from '/core/anim.js';
 import { formatIssue } from '/core/messages.js';
 import { createUndo } from './undo.js';
-import { mountReferences, references, clearReferences } from './reference.js';
+import { mountReferences, takeReferences, putBack, isReading } from './reference.js';
 
 const FPS = 60;
 const snap = v => Math.round(Math.max(0, v) * FPS) / FPS;
@@ -244,24 +244,33 @@ function setBusy(on, text = '') {
   $('#jobText', root).textContent = text;
   for (const id of ['#sendBtn', '#improveBtn']) $(id, root).disabled = on;
 }
+let sending = false; // between the click and the server's answer
 async function generate(mode) {
-  if (!S.clip || S.job) return;
+  if (!S.clip || S.job || sending) return;
   const prompt = $('#prompt', root).value.trim();
   if (mode !== 'improve' && !prompt) return $('#prompt', root).focus();
   const eng = engine();
   if (!eng.model && $('#engModel', root).value === CUSTOM) return toast(t('engine.customPlaceholder'), true);
+  // Frames still being read would be missing from the request.
+  if (isReading()) return toast(t('ref.wait'), true);
+  let sent = [];
+  sending = true;
   try {
     if (S.dirty) await save();
+    if (isReading()) return toast(t('ref.wait'), true); // attached while saving
+    sent = takeReferences(); // taken now, so frames attached later belong to the next request
     const review = $('#review', root).checked;
     prefs.set('review', review);
-    const { jobId } = await api(`/api/clips/${S.clip.id}/generate`, { method: 'POST', body: { prompt, ...eng, mode, review, lang: getLang(), references: references() } });
+    let jobId;
+    try {
+      ({ jobId } = await api(`/api/clips/${S.clip.id}/generate`, { method: 'POST', body: { prompt, ...eng, mode, review, lang: getLang(), references: sent } }));
+    } catch (e) { putBack(sent); throw e; } // the request was refused: the frames stay for the next try
     $('#prompt', root).value = '';
-    clearReferences();
     S.job = jobId;
     setBusy(true, t('job.start'));
     setClip(await api(`/api/clips/${S.clip.id}`), { keepTime: true, keepUndo: true });
     poll(jobId, S.clip.id);
-  } catch (e) { toast(e.message, true); }
+  } catch (e) { toast(e.message, true); } finally { sending = false; }
 }
 function poll(jobId, clipId) {
   const label = $('#engModel', root).value === CUSTOM ? $('#engCustom', root).value : $('#engModel', root).selectedOptions[0]?.textContent ?? '';

@@ -2,17 +2,24 @@
 // frames here in the browser; the server hands them to the model as images.
 import { $, esc, toast } from './api.js';
 import { t } from './i18n.js';
-import { frameTimes, frameIndices, fitSize, MAX_FRAMES, DEFAULT_FRAMES, MAX_EDGE, MAX_FRAME_BYTES } from '/core/reference.js';
+import { fitSize, videoFrames, gifFrames, createGate, MAX_FRAMES, DEFAULT_FRAMES, MAX_EDGE, MAX_FRAME_BYTES } from '/core/reference.js';
 
 const MAX_FILE = 500e6; // bigger files are rejected instead of freezing the tab
 
 let frames = [];   // data URLs, in time order
 let source = null; // the last attached file, so changing the frame count can re-extract
 let wanted = DEFAULT_FRAMES;
+let reading = false; // an extraction is running
+const gate = createGate();
 let onChange = () => {};
 
 export const references = () => frames.slice();
-export const clearReferences = () => { frames = []; source = null; onChange(); };
+export const isReading = () => reading;
+// Removes the frames and drops any extraction still running.
+export const clearReferences = () => { gate.cancel(); reading = false; frames = []; source = null; onChange(); };
+// The frames for a request, removed from the composer right away; putBack() returns them if the request fails.
+export const takeReferences = () => { const taken = frames; clearReferences(); return taken; };
+export const putBack = taken => { if (taken.length && !frames.length && !reading) { frames = taken; onChange(); } };
 
 function toDataUrl(drawable, w, h) {
   const { width, height } = fitSize(w, h, MAX_EDGE);
@@ -30,81 +37,72 @@ function toDataUrl(drawable, w, h) {
   throw new Error(t('ref.tooLarge'));
 }
 
-async function fromImage(file, n) {
+async function fromImage(file, n, current) {
   if (file.type === 'image/gif' && 'ImageDecoder' in window) {
+    let decoder;
     try {
-      const decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
-      await decoder.tracks.ready;
-      const count = decoder.tracks.selectedTrack.frameCount;
-      const out = [];
-      for (const frameIndex of frameIndices(count, n)) {
-        const { image } = await decoder.decode({ frameIndex });
-        out.push(toDataUrl(image, image.displayWidth, image.displayHeight));
-        image.close();
-      }
-      decoder.close();
-      if (out.length) return { frames: out, still: count < 2 };
-    } catch { /* fall back to the first frame below */ }
+      decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
+      const r = await gifFrames(decoder, { n, draw: toDataUrl, current });
+      if (!r) return null;
+      if (r.frames.length) return { frames: r.frames };
+    } catch { if (!current()) return null; /* otherwise fall back to the first frame below */ }
+    finally { decoder?.close(); }
   }
   const bitmap = await createImageBitmap(file);
-  const url = toDataUrl(bitmap, bitmap.width, bitmap.height);
-  bitmap.close();
-  return { frames: [url], still: true, gif: file.type === 'image/gif' };
+  try { return { frames: [toDataUrl(bitmap, bitmap.width, bitmap.height)], gif: file.type === 'image/gif' }; }
+  finally { bitmap.close(); }
 }
 
-async function fromVideo(file, n) {
+async function fromVideo(file, n, current) {
   const video = document.createElement('video');
   const objectUrl = URL.createObjectURL(file);
   video.muted = true; video.preload = 'auto'; video.playsInline = true; video.src = objectUrl;
-  const once = (event) => new Promise((resolve, reject) => {
-    video.addEventListener(event, resolve, { once: true });
-    video.addEventListener('error', () => reject(new Error(t('ref.unreadable'))), { once: true });
-  });
   try {
-    await once('loadedmetadata');
-    if (!video.videoWidth) throw new Error(t('ref.unreadable'));
-    const duration = Number.isFinite(video.duration) ? video.duration : 0;
-    const out = [];
-    for (const time of frameTimes(duration, n)) {
-      const seeked = once('seeked');
-      video.currentTime = Math.min(time, Math.max(0, duration - 0.05));
-      await seeked;
-      out.push(toDataUrl(video, video.videoWidth, video.videoHeight));
-    }
-    return { frames: out, still: false };
+    const out = await videoFrames(video, { n, draw: toDataUrl, current });
+    return out && { frames: out };
   } finally {
+    video.removeAttribute('src');
+    video.load();
     URL.revokeObjectURL(objectUrl);
   }
 }
 
+const readError = e => (e.code === 'timeout' || e.code === 'media' ? t('ref.unreadable') : e.message || t('ref.unreadable'));
+
+// Every attach and every removal is a new operation; a slower, older extraction never
+// overwrites a newer one or brings back frames the user removed.
 export async function attach(file, n = wanted) {
   if (!file) return;
   if (file.size > MAX_FILE) return toast(t('ref.tooBig'), true);
   const isVideo = file.type.startsWith('video/'), isImage = file.type.startsWith('image/');
   if (!isVideo && !isImage) return toast(t('ref.type'), true);
-  setStatus(t('ref.reading'));
+  const mine = gate.start();
+  const current = () => gate.isCurrent(mine);
+  reading = true;
+  onChange();
   try {
-    const r = isVideo ? await fromVideo(file, n) : await fromImage(file, n);
-    frames = r.frames.slice(0, MAX_FRAMES);
-    source = file;
-    if (r.gif) toast(t('ref.gifStill'));
-    onChange();
+    const r = await (isVideo ? fromVideo(file, n, current) : fromImage(file, n, current));
+    if (!current()) return;
+    if (r) {
+      frames = r.frames.slice(0, MAX_FRAMES);
+      source = file;
+      if (r.gif) toast(t('ref.gifStill'));
+    }
   } catch (e) {
-    toast(e.message || t('ref.unreadable'), true);
-    onChange();
+    if (current()) toast(readError(e), true);
+  } finally {
+    if (current()) { reading = false; onChange(); }
   }
 }
-
-function setStatus(text) { const el = $('#refStatus'); if (el) el.textContent = text; }
 
 // Wires the attach button, the file picker, drag and drop on the composer, and pasting.
 export function mountReferences(root) {
   const box = $('#refs', root), input = $('#refFile', root);
   const render = () => {
-    box.classList.toggle('hidden', !frames.length);
-    box.innerHTML = frames.length
+    box.classList.toggle('hidden', !frames.length && !reading);
+    box.innerHTML = !frames.length && reading ? `<div class="refbar"><span class="spinner"></span><span>${esc(t('ref.reading'))}</span><button class="link" id="refClear" type="button">${esc(t('ref.remove'))}</button></div>` : frames.length
       ? `<div class="thumbs">${frames.map((f, i) => `<img src="${f}" alt="${esc(t('ref.frame', { n: i + 1 }))}" title="${esc(t('ref.frame', { n: i + 1 }))}">`).join('')}</div>
-         <div class="refbar"><span id="refStatus">${esc(t(frames.length === 1 ? 'ref.count.one' : 'ref.count', { n: frames.length }))}</span>
+         <div class="refbar"><span id="refStatus">${esc(reading ? t('ref.reading') : t(frames.length === 1 ? 'ref.count.one' : 'ref.count', { n: frames.length }))}</span>
          ${source && (frames.length > 1 || source.type.startsWith('video/')) ? `<label>${esc(t('ref.frames'))}<select id="refCount">${Array.from({ length: MAX_FRAMES - 1 }, (_, i) => i + 2).map(n => `<option${n === wanted ? ' selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
          <button class="link" id="refClear" type="button">${esc(t('ref.remove'))}</button></div>`
       : '';

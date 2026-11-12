@@ -19,6 +19,8 @@ export function models() {
     const list = (cache.models ?? []).filter(m => m.visibility === 'list').map(m => ({
       id: m.slug, label: m.display_name ?? m.slug, apiAvailable: m.supported_in_api !== false,
       efforts: (m.supported_reasoning_levels ?? []).map(e => e.effort), defaultEffort: m.default_reasoning_level,
+      // Codex's cache lists what a model accepts; without the field nothing is known, so it is not ruled out.
+      images: Array.isArray(m.input_modalities) ? m.input_modalities.includes('image') : undefined,
     }));
     if (list.length) return list;
   } catch { /* no cache yet */ }

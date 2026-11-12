@@ -181,7 +181,7 @@ async function generate(job, { id, prompt, engine, mode: requested, lang = 'en',
 
 // Records the request in the chat right away, then generates in the background.
 export async function startJob(params) {
-  if (params.references?.length && !await acceptsImages(params.engine)) throw Object.assign(new Error('This model cannot see images. Choose another model, or turn on "The models can see images" for the OpenAI-compatible API in Settings.'), { status: 400 });
+  if (params.references?.length && !await acceptsImages(params.engine)) throw Object.assign(new Error(`This model cannot see images. Choose another model${params.engine.provider === 'compatible' ? ', or turn on "The models can see images" for the OpenAI-compatible API in Settings' : ''}.`), { status: 400 });
   if (busy.has(params.id)) throw Object.assign(new Error('This clip is already generating.'), { status: 409 });
   busy.add(params.id);
   try {

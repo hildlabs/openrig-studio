@@ -36,9 +36,24 @@ const compatibleConfig = s => ({
   images: s.compatImages === 'on',
 });
 
-// Visual review sends an image; text-only models skip it.
+// Models known to be text-only. Model ids can be typed in freely, so the chosen id decides, not
+// just the provider. Anything not listed is assumed to see images.
+const TEXT_ONLY = {
+  openai: /^(gpt-3|gpt-4(-0\d{3}|-32k)?$|o1-(mini|preview)|o3-mini|.*(instruct|embedding|whisper|tts|transcribe|moderation|davinci|babbage))/i,
+  anthropic: /^claude-(2|instant)/i,
+  'claude-code': /^claude-(2|instant)/i,
+};
+// `known`: models of the provider that state their own capability (Codex's model cache).
+export function modelSeesImages(provider, model, known = []) {
+  const listed = known.find(m => m.id === model);
+  if (listed && typeof listed.images === 'boolean') return listed.images;
+  return !TEXT_ONLY[provider]?.test(String(model ?? ''));
+}
+
+// Visual review and reference frames send images; models that can't see them skip or refuse.
 export async function acceptsImages(engine) {
-  return engine.provider !== 'compatible' || compatibleConfig(await loadSettings()).images;
+  if (engine.provider === 'compatible') return compatibleConfig(await loadSettings()).images;
+  return modelSeesImages(engine.provider, engine.model, engine.provider === 'codex' ? codex.models() : []);
 }
 
 // request: { provider, model, effort, system, text, images }
