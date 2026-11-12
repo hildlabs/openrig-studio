@@ -128,6 +128,12 @@ export const POSE_PARTS = partsOf(RIG_R15);
 export const withDefaults = rig => ({ family: 'R15', body: 'LowerTorso', feet: RIG_R15.feet, ik: true, colliders: RIG_R15.colliders, probes: RIG_R15.probes, measured: RIG_R15.measured, ...rig });
 // Body regions, used for colour coding in the UI.
 export const REGION = part => (/Leg|Foot/.test(part) ? 'legs' : /Torso/.test(part) ? 'torso' : part === 'Head' ? 'head' : 'arms');
+// Custom rigs name their regions themselves (rig.regions); the others are told by part name.
+export const regionOf = (rig, part) => rig?.regions?.[part] ?? REGION(part);
+// How a body is described to people and models: custom rigs carry the name of their Studio model.
+export const rigLabel = rig => rig?.label ?? rig?.family ?? 'R15';
+// Same body? Imported R15 rigs share a family, custom rigs only match themselves.
+export const sameBody = (a, b) => (a.family ?? 'R15') === (b.family ?? 'R15') && ((a.family ?? 'R15') !== 'custom' || a.id === b.id);
 
 // ---------- CFrame math (row-major 3x3 rotation like Roblox) ----------
 export const IDENTITY = Object.freeze({ p: [0, 0, 0], R: [1, 0, 0, 0, 1, 0, 0, 0, 1] });
@@ -222,7 +228,8 @@ export function solve(transforms = {}, rig = RIG_R15, root = rootCFrame(rig)) {
   return world;
 }
 
-// Lowest world y of any corner of the given parts.
+// Lowest world y of any corner of the given parts. A body without feet (a floating
+// creature) has nothing to ground: 0.
 export function lowestY(world, parts, rig = RIG_R15) {
   let min = Infinity;
   for (const name of parts) {
@@ -230,5 +237,21 @@ export function lowestY(world, parts, rig = RIG_R15) {
     for (const x of [-sx, sx]) for (const y of [-sy, sy]) for (const z of [-sz, sz])
       min = Math.min(min, point(world[name], [x, y, z])[1]);
   }
-  return min;
+  return min === Infinity ? 0 : min;
+}
+
+// Height reference for framing a body: the head of R15 and R6; for a custom rig the highest
+// point (or, for wide creatures, the widest) less half a head's worth, so the same padding fits.
+export function rigTop(world, rig = RIG_R15) {
+  if (rig.family !== 'custom') return world.Head.p[1];
+  let top = 0, wide = 0;
+  for (const [name, size] of Object.entries(rig.parts)) {
+    const [sx, sy, sz] = size.map(v => v / 2);
+    for (const x of [-sx, sx]) for (const y of [-sy, sy]) for (const z of [-sz, sz]) {
+      const p = point(world[name], [x, y, z]);
+      top = Math.max(top, p[1]);
+      wide = Math.max(wide, Math.abs(p[0]), Math.abs(p[2]));
+    }
+  }
+  return Math.max(top, wide * 1.2) - 0.5;
 }

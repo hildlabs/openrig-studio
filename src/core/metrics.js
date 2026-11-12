@@ -1,7 +1,7 @@
 // Measurements of a prepared clip for the benchmark (scripts/bench.mjs), on top of the checks
 // in anim.js: how far planted feet slide or sink, how much of the body moves, how long it stands still
 // and how long it is in the air. Sampled at 30 fps like the checks.
-import { RIG_R15, partsOf, REGION, quatFromR, solve, lowestY } from './rig.js';
+import { RIG_R15, partsOf, regionOf, quatFromR, solve, lowestY } from './rig.js';
 import { buildTracks, sampleTracks, duration } from './anim.js';
 
 const FPS = 30;
@@ -56,7 +56,7 @@ export function motionStats(anim, rig = RIG_R15) {
     footSink: round(footSink),
     airTime: round(airTime, 2),
     activeJoints: moving.length,
-    regions: [...new Set(moving.map(REGION))],
+    regions: [...new Set(moving.map(part => regionOf(rig, part)))],
     stillShare: round(still / count, 2),
     peakSpeed: Math.round(peakSpeed),
   };

@@ -10,7 +10,7 @@ import { startJob, getJob, startCompare, compareStatus, listCompares, isBusy } f
 import * as studio from './studio.js';
 import * as rigs from './rigs.js';
 import { prepare, retarget, restClip, isRest, fromStudio, toRbxmx, toLuauBuilder } from '../core/anim.js';
-import { RIG_R15 } from '../core/rig.js';
+import { RIG_R15, rigLabel, sameBody } from '../core/rig.js';
 import { renderSheet, renderStrip } from '../core/render.js';
 
 const PORT = Number(process.env.PORT) || 4330;
@@ -95,7 +95,7 @@ const routes = [
     const from = await rigs.rigOf({ rig: entryRig(clip, h) }), to = await rigs.rigOf(clip);
     let result = { ...h, anim: structuredClone(h.anim) };
     if (entryRig(clip, h) !== (clip.rig ?? '')) {
-      if ((from.family ?? 'R15') !== (to.family ?? 'R15')) throw Object.assign(new Error(`This version was made for ${from.family ?? 'R15'}, the clip is now ${to.family ?? 'R15'}.`), { status: 400 });
+      if (!sameBody(from, to)) throw Object.assign(new Error(`This version was made for ${rigLabel(from)}, the clip is now ${rigLabel(to)}.`), { status: 400 });
       result = retarget(h.anim, from, to);
     }
     lib.addEntry(clip, { ...result, anim: { ...result.anim, name: clip.name } }, 'restored', String(h.id));
@@ -113,7 +113,7 @@ const routes = [
     return { png: renderStrip(clip.anim, await rigs.rigOf(clip)).png };
   }],
   // Moves the clip to another rig: the current version is retargeted and becomes a new version.
-  // Between R15 and R6 there is nothing to carry over, so only an empty clip can switch.
+  // Between R15, R6 and custom rigs there is nothing to carry over, so only an empty clip can switch.
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/rig$/, async (req, [id]) => {
     const clip = await lib.loadClip(id);
     const { rig: next = '' } = await readBody(req);
@@ -122,9 +122,9 @@ const routes = [
     if ((to?.id ?? '') === (clip.rig ?? '')) return clip;
     const from = await rigs.rigOf(clip), target = to?.rig ?? RIG_R15;
     let result;
-    if ((from.family ?? 'R15') === (target.family ?? 'R15')) result = retarget(clip.anim, from, target);
+    if (sameBody(from, target)) result = retarget(clip.anim, from, target);
     else if (isRest(clip.anim)) result = prepare(restClip(clip.name), {}, target);
-    else throw Object.assign(new Error(`Only an empty clip can switch between ${from.family ?? 'R15'} and ${target.family ?? 'R15'}. Start a new clip for this rig.`), { status: 400 });
+    else throw Object.assign(new Error(`Only an empty clip can switch between ${rigLabel(from)} and ${rigLabel(target)}. Start a new clip for this rig.`), { status: 400 });
     if (to) clip.rig = to.id; else delete clip.rig;
     lib.addEntry(clip, result, 'retargeted', to?.name ?? 'R15');
     return lib.saveClip(clip);
@@ -132,9 +132,9 @@ const routes = [
 
   ['GET', /^\/api\/rigs$/, async () => rigs.listRigs()],
   ['POST', /^\/api\/rigs\/import$/, async (req) => {
-    const { studio: studioId, name } = await readBody(req);
-    const found = await studio.readRig(String(studioId));
-    return rigs.addRig(name || found.name, found.rig, found.description);
+    const { studio: studioId, name, custom } = await readBody(req);
+    const found = custom ? await studio.readCustomRig(String(studioId)) : await studio.readRig(String(studioId));
+    return rigs.addRig(name || found.name, found.rig, found.description, { custom: Boolean(custom) });
   }],
   ['PATCH', /^\/api\/rigs\/([a-z0-9-]+)$/, async (req, [id]) => rigs.renameRig(id, (await readBody(req)).name)],
   ['DELETE', /^\/api\/rigs\/([a-z0-9-]+)$/, async (req, [id]) => rigs.deleteRig(id)],

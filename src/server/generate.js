@@ -8,13 +8,17 @@ import { ROOT, DATA, loadSettings } from './settings.js';
 import { callModel, listProviders, acceptsImages } from './providers/index.js';
 import { loadClip, saveClip, addEntry, createClip, slug } from './library.js';
 import { prepare, retarget, measure, forModel, isRest } from '../core/anim.js';
-import { RIG_R15, partsOf } from '../core/rig.js';
+import { RIG_R15, partsOf, rigLabel } from '../core/rig.js';
+import { customPrompt } from '../core/prompt.js';
 import { rigOf } from './rigs.js';
 import { formatIssues } from '../core/messages.js';
 import { renderSheet } from '../core/render.js';
 
 const BASE_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system.md'), 'utf8');
 const R6_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system-r6.md'), 'utf8');
+const CUSTOM_TEMPLATE = readFileSync(path.join(ROOT, 'prompts', 'system-custom.md'), 'utf8');
+// The prompt for a rig: fixed texts for R15 and R6, generated from the rig's own joints for custom ones.
+export const promptFor = rig => (rig.family === 'custom' ? customPrompt(rig, CUSTOM_TEMPLATE) : rig.family === 'R6' ? R6_PROMPT : BASE_PROMPT);
 const LANG_NAME = { en: 'English', de: 'German' };
 // The benchmark passes its own base prompt and leaves out the project style.
 export async function systemPrompt(lang, { base = BASE_PROMPT, withStyle = true } = {}) {
@@ -107,8 +111,8 @@ export async function runPipeline({ clip, wish, mode, engine, system, review: wi
     onStep('retry');
     const again = extractJson(await ask(`${request}
 
-IMPORTANT: this character is ${rig.family ?? 'R15'}. Your last answer used joints it doesn't have (${foreign.join(', ')}). Use only these pose names: ${partsOf(rig).join(', ')}.`));
-    if (!again || jointsMissingIn(again, rig).length) throw new Error(`The model answered with joints this ${rig.family ?? 'R15'} character doesn't have (${foreign.join(', ')}). Try again or pick another model.`);
+IMPORTANT: this character is ${rigLabel(rig)}. Your last answer used joints it doesn't have (${foreign.join(', ')}). Use only these pose names: ${partsOf(rig).join(', ')}.`));
+    if (!again || jointsMissingIn(again, rig).length) throw new Error(`The model answered with joints this ${rigLabel(rig)} character doesn't have (${foreign.join(', ')}). Try again or pick another model.`);
     json = again;
   }
   const draft = prepare(json, { literal: true }, rig);
@@ -143,18 +147,18 @@ async function generate(job, { id, prompt, engine, mode: requested, lang = 'en',
   const started = Date.now();
   // R15 models always work on the default body (the system prompt describes it): a clip made
   // for another R15 rig is shown to them retargeted back, and their answer is retargeted onto
-  // the rig. R6 has its own prompt and is worked on directly.
+  // the rig. R6 and custom rigs have their own prompts and are worked on directly.
   const rig = await rigOf(clip);
-  const r6 = rig.family === 'R6';
-  const system = await systemPrompt(lang, { base: r6 ? R6_PROMPT : BASE_PROMPT });
+  const direct = rig.family === 'R6' || rig.family === 'custom';
+  const system = await systemPrompt(lang, { base: promptFor(rig) });
   const fit = r => {
-    if (rig === RIG_R15 || r6) return r;
+    if (rig === RIG_R15 || direct) return r;
     const moved = retarget(r.anim, RIG_R15, rig);
     return { ...r, anim: moved.anim, fixes: [...r.fixes, ...moved.fixes], issues: moved.issues };
   };
-  const view = rig === RIG_R15 || r6 ? clip : { ...clip, anim: retarget(clip.anim, rig, RIG_R15).anim };
+  const view = rig === RIG_R15 || direct ? clip : { ...clip, anim: retarget(clip.anim, rig, RIG_R15).anim };
   const out = await runPipeline({
-    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; }, rig: r6 ? rig : RIG_R15,
+    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; }, rig: direct ? rig : RIG_R15,
   });
   const { notes, plan, review, usage, draftUsage } = out;
   const draft = fit(out.draft), result = fit(out.result);

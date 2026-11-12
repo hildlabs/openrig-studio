@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **Custom rigs.** *Clip › Rig › Import selected custom rig from Studio…* reads any model whose parts are joined by Motor6Ds or AnimationConstraints, humanoid or not (creatures, robots, vehicles). Body, feet, limbs for hand and foot targets, regions and limits are worked out from the joint hierarchy, so IK, foot lock, grounding, the checks, the contact sheet, the dope sheet, Export and Import work without fixed part names. The system prompt is generated from the rig description. Play in Studio uses a copy of the model as the preview rig.
+
 ## 0.2.0
 
 ### New

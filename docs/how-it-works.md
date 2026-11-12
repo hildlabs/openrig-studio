@@ -54,6 +54,26 @@ Checked in Studio: a test clip with every joint turned, the body moved and Linea
 
 R6 has no IK (one-piece limbs), so the pipeline skips foot targets; grounding uses the corners of the legs. The model gets its own system prompt (`prompts/system-r6.md`) with rendered poses.
 
+## Custom rigs (`src/core/custom.js`, `src/core/prompt.js`)
+
+Any hierarchy of parts joined by Motor6Ds (or AnimationConstraints) can be a rig. Studio only reports what is there: parts with sizes and joints with C0/C1 (`READ_CUSTOM_RIG` in `src/server/studio.js`). `buildCustomRig` derives everything else from the hierarchy and the rest pose, so IK, foot lock, grounding and the checks don't need fixed part names:
+
+| What | How it is found |
+|---|---|
+| Root | The part no joint moves (the one with the most parts below it if there are several); parts it doesn't reach are left out. |
+| Body | The root's only child (a root with several jointed children is refused: offsets and grounding move the body part, so a second branch would stay behind). It gets the position offsets and is what grounding lowers. A body joint whose C0 is rotated is handled: the world-space lift is turned into the joint frame before it is added to `pos`. |
+| Feet | Leaves whose lowest corner is near the lowest point of the whole rig in the rest pose (`max(0.25, 8 % of the height)`). A rig can name its own `feet`, or `[]` for none. Without feet nothing is grounded. |
+| IK chains | A leaf, the part above it and the one above that, where the two upper parts carry nothing else and the upper one is neither the root nor the body. Chains ending at a foot are foot chains. |
+| Colliders and probes | Colliders: everything that is not a limb, biggest first. Probes: the end and the lower part of non-foot chains, unless they start inside a collider. |
+| Limits | ±150° on every axis, the body ±180° (spins and flips). A rig may carry its own. |
+| Regions | Legs = chains to a foot, arms = other limbs, torso = the rest, head = the highest part below the root. They colour the preview and group the dope sheet. |
+
+IK solves the upper joint on all three axes and, because the hinge axis of a custom joint is unknown, the lower joint too (damped, within the limits). R15 keeps its hinge. A foot is kept flat in world space for any rest orientation: with `W = P · C0 · T · C1⁻¹` for the foot's joint, `T = C0⁻¹ · Pᵀ · Ry(yaw) · Rest · C1`, which is the old `Pᵀ · Ry(yaw)` when everything rests aligned with the world. A foot target is the centre of the sole; the distance from the part's centre to its lowest corner is measured once and stored as `lift`.
+
+The system prompt is `prompts/system-custom.md` with the rig description filled in: a table of parts (size, centre, joint pivot), the joint tree, where the x, y and z axes of every joint point in the rest pose and its limits, the limbs with their rest position and reach, and a ground rule that fits the rig. Names are restricted to plain characters because they end up in the prompt, in Luau and in XML.
+
+In Studio the preview rig is a clone of the model the rig was read from (it has to stay in the place), played through its Humanoid or an `AnimationController`. A clip can't be retargeted to or from a custom rig; models work on the rig directly.
+
 ## Other proportions (`retarget` in `src/core/anim.js`)
 
 A clip can be made for an imported rig (`data/rigs`, read from the rig selected in Studio: part sizes, Motor6D or AnimationConstraint offsets, HumanoidDescription). Moving a clip to another rig:

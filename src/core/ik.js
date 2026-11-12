@@ -1,7 +1,10 @@
-// Two-bone IK for the R15 limbs. The model may give target positions for hands and feet
+// Two-bone IK for the limbs of a rig. The model may give target positions for hands and feet
 // (character space: x right, y up from the ground, z backwards); joint angles are solved
 // numerically (damped least squares) starting from the model's own guess, so the elbow/knee
 // direction it intended is kept. Joint limits of the rig are respected.
+//
+// R15 has four fixed chains. A custom rig lists its own in `rig.chains` (rig-builder.js finds
+// them in the joint hierarchy): { joints: [upper, lower], end, foot?, ball?, lift? }.
 import { RIG_R15, solve, anglesDeg, cf, rotV, mulR, eulerDeg } from './rig.js';
 
 export const IK_CHAINS = {
@@ -10,8 +13,15 @@ export const IK_CHAINS = {
   RightFoot: { joints: ['RightUpperLeg', 'RightLowerLeg'], end: 'RightFoot', foot: true },
   LeftFoot: { joints: ['LeftUpperLeg', 'LeftLowerLeg'], end: 'LeftFoot', foot: true },
 };
-// Parameters per chain: upper x, y, z and the hinge (lower x).
-const PARAMS = [[0, 0], [0, 1], [0, 2], [1, 0]];
+// The chains of a rig by name of their end part ({} when it has none).
+export const chainsOf = rig => rig.chains ?? (rig.ik ? IK_CHAINS : {});
+export const chainOf = (rig, name) => (Object.hasOwn(chainsOf(rig), name) ? chainsOf(rig)[name] : null);
+// Studs from the centre of a foot part to its sole. R15 feet lie flat; a custom rig measured it.
+export const soleLift = (rig, name) => chainOf(rig, name)?.lift ?? rig.parts[name][1] / 2;
+// Parameters per chain: upper x, y, z and the hinge (lower x). A chain whose lower joint has
+// no known hinge axis (custom rigs) solves all three axes of it.
+const HINGE = [[0, 0], [0, 1], [0, 2], [1, 0]];
+const BALL = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]];
 const clampTo = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 
 function transformsFrom(rotations, base) {
@@ -24,8 +34,9 @@ function transformsFrom(rotations, base) {
 // Returns new rotations for the chain joints (+ foot) and the remaining error in studs.
 // flat: turn the foot so its sole is parallel to the ground (off: the foot keeps its own pose).
 export function solveChain(name, target, base, rot, rig = RIG_R15, { flat = true } = {}) {
-  const chain = IK_CHAINS[name];
-  const want = chain.foot ? [target[0], target[1] + rig.parts[chain.end][1] / 2, target[2]] : target;
+  const chain = chainOf(rig, name);
+  const PARAMS = chain.ball ? BALL : HINGE;
+  const want = chain.foot ? [target[0], target[1] + soleLift(rig, name), target[2]] : target;
   const lim = j => rig.limits[j];
   const endPos = state => solve(transformsFrom(state, base), rig)[chain.end].p;
   const err = state => { const p = endPos(state); return [want[0] - p[0], want[1] - p[1], want[2] - p[2]]; };
@@ -64,14 +75,24 @@ export function solveChain(name, target, base, rot, rig = RIG_R15, { flat = true
 }
 
 // Foot rotation that keeps the sole parallel to the ground and pointing where the hips point.
+// The foot's world rotation is Ry(yaw) turned into its rest orientation (identity on R15, where
+// every part starts aligned with the world; custom rigs may rest rotated). With W = P · C0 · T · C1⁻¹
+// for the foot's joint, T = C0⁻¹ · Pᵀ · Ry(yaw) · Rest · C1.
+const transpose = R => [R[0], R[3], R[6], R[1], R[4], R[7], R[2], R[5], R[8]];
 function flatFoot(chain, state, base, rig) {
   const world = solve(transformsFrom(state, base), rig);
+  const rest = solve({}, rig);
   const P = world[chain.joints[1]].R;
-  const fwd = rotV(world.LowerTorso.R, [0, 0, -1]);
+  // Where the body faces now, relative to its rest orientation (−Z at rest).
+  const fwd = rotV(mulR(world[rig.body].R, transpose(rest[rig.body].R)), [0, 0, -1]);
   const yaw = Math.atan2(-fwd[0], -fwd[2]) * 180 / Math.PI;
-  const local = mulR([P[0], P[3], P[6], P[1], P[4], P[7], P[2], P[5], P[8]], anglesDeg([0, yaw, 0]));
+  const joint = rig.joints.find(j => j.part1 === chain.end);
+  const c0 = joint.c0R ?? IDENT, c1 = joint.c1R ?? IDENT;
+  const want = mulR(anglesDeg([0, yaw, 0]), rest[chain.end].R);
+  const local = mulR(mulR(transpose(c0), mulR(transpose(P), want)), c1);
   return eulerDeg(local).map((v, i) => Math.round(clampTo(v, rig.limits[chain.end][i]) * 100) / 100);
 }
+const IDENT = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 function solveLinear(A, b) {
   const n = b.length;

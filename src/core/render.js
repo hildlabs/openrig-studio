@@ -1,11 +1,11 @@
 // Software renderer for contact sheets and filmstrips (PNG, no dependencies besides node:zlib).
 // Contact sheets give the model visual feedback; filmstrips are library thumbnails.
 import { deflateSync } from 'node:zlib';
-import { RIG_R15, solve, point, rotV, mulR, anglesDeg } from './rig.js';
+import { RIG_R15, solve, point, rotV, mulR, anglesDeg, regionOf, rigTop } from './rig.js';
 import { sample, duration } from './anim.js';
 
 const COLORS = { arms: [245, 205, 48], torso: [42, 111, 214], legs: [75, 163, 75], face: [43, 33, 24] };
-const colorOf = name => (/Leg|Foot/.test(name) ? COLORS.legs : /Torso/.test(name) ? COLORS.torso : COLORS.arms);
+const colorOf = (rig, name) => COLORS[regionOf(rig, name)] ?? COLORS.arms;
 // Eyes and mouth so the facing direction is readable (head local space, face = -Z).
 const FACE = [
   { part: 'Head', center: [-0.22, 0.12, -0.585], size: [0.12, 0.22, 0.04] },
@@ -73,7 +73,7 @@ function boxCorners(c, size) {
   return out;
 }
 
-function drawCell(cv, ox, oy, w, h, world, cam, scale, center, rig) {
+function drawCell(cv, ox, oy, w, h, world, cam, scale, center, rig, ground = 7) {
   const zbuf = new Float32Array(w * h).fill(Infinity);
   const proj = v => {
     const d = [v[0] - center[0], v[1] - center[1], v[2] - center[2]];
@@ -98,11 +98,12 @@ function drawCell(cv, ox, oy, w, h, world, cam, scale, center, rig) {
     }
   };
   const quad = (p, color, bias) => { tri(p[0], p[1], p[2], color, bias); tri(p[0], p[2], p[3], color, bias); };
-  const g = 7;
+  const g = ground;
   quad([[-g, 0, -g], [g, 0, -g], [g, 0, g], [-g, 0, g]].map(proj), GROUND, 0.02);
-  const parts = Object.entries(rig.parts).filter(([n]) => n !== rig.root).map(([n, size]) => ({ cf: world[n], size: rig.display?.[n] ?? size, color: colorOf(n) }));
-  const front = -((rig.display?.Head ?? rig.parts.Head)[2] / 2 + 0.005); // eyes and mouth sit on the head's front face
-  const face = FACE.map(f => ({ cf: { p: point(world[f.part], [f.center[0], f.center[1], front]), R: world[f.part].R }, size: f.size, color: COLORS.face }));
+  const parts = Object.entries(rig.parts).filter(([n]) => n !== rig.root).map(([n, size]) => ({ cf: world[n], size: rig.display?.[n] ?? size, color: colorOf(rig, n) }));
+  const front = rig.face === false ? 0 : -((rig.display?.Head ?? rig.parts.Head)[2] / 2 + 0.005); // eyes and mouth sit on the head's front face
+  // Custom rigs have no known front face: they are shown without eyes.
+  const face = rig.face === false ? [] : FACE.map(f => ({ cf: { p: point(world[f.part], [f.center[0], f.center[1], front]), R: world[f.part].R }, size: f.size, color: COLORS.face }));
   for (const b of parts) {
     const c = boxCorners(b.cf, b.size).map(v => [v[0], 0.001, v[2]]).map(proj);
     for (const [i, j, k, l] of BOX_FACES) quad([c[i], c[j], c[k], c[l]], SHADOW, 0.01);
@@ -118,6 +119,13 @@ function drawCell(cv, ox, oy, w, h, world, cam, scale, center, rig) {
   }
 }
 
+// Widest horizontal distance of any part corner from the body's centre line.
+function rigExtent(world, rig) {
+  let wide = 0;
+  for (const [name, size] of Object.entries(rig.parts)) for (const c of boxCorners(world[name], size)) wide = Math.max(wide, Math.abs(c[0]), Math.abs(c[2]));
+  return wide;
+}
+
 // Grid of frames: one row per view, one column per time. Returns { png, times, cell, views }.
 export function renderSheet(anim, { frames, cell, views = ['threeQuarter', 'side'], labels = true, rig = RIG_R15 } = {}) {
   const d = duration(anim);
@@ -128,13 +136,18 @@ export function renderSheet(anim, { frames, cell, views = ['threeQuarter', 'side
   const [cw, ch] = cell;
   const cv = new Canvas(cw * n, ch * views.length, BG);
   // Fixed framing so root motion and jump height stay visible.
-  let top = 6.2;
+  // A custom rig can be tiny or huge or wide, so its framing follows its extent.
+  const custom = rig.family === 'custom';
+  let top = custom ? 2 : 6.2, half = 3.25;
   const worlds = times.map(t => solve(sample(anim, t), rig));
-  for (const w of worlds) top = Math.max(top, w.Head.p[1] + 1.2);
-  const scale = Math.min(cw / 6.5, (ch * 0.92) / (top + 0.4));
+  for (const w of worlds) {
+    top = Math.max(top, rigTop(w, rig) + 1.2);
+    if (custom) half = Math.max(half, rigExtent(w, rig) + 0.3);
+  }
+  const scale = Math.min(cw / (2 * half), (ch * 0.92) / (top + 0.4));
   const center = [0, top / 2 - 0.1, 0];
   worlds.forEach((world, i) => {
-    views.forEach((v, r) => drawCell(cv, i * cw, r * ch, cw, ch, world, VIEWS[v], scale, center, rig));
+    views.forEach((v, r) => drawCell(cv, i * cw, r * ch, cw, ch, world, VIEWS[v], scale, center, rig, Math.max(7, half * 2)));
     if (labels) text(cv, i * cw + 6, 6, `${times[i].toFixed(2)}s`, LABEL);
   });
   for (let i = 1; i < n; i++) cv.rect(i * cw, 0, 1, cv.h, LINE);

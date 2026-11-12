@@ -1,13 +1,15 @@
-// Rigs with other proportions than the default R15 body (Rthro, scaled avatars), read from Studio
-// and stored in data/rigs. A clip's `rig` names the one it is made for; none = the default rig.
+// Rigs with other proportions than the default R15 body (Rthro, scaled avatars) and custom rigs
+// with their own joint hierarchy (any Motor6D tree, humanoid or not), read from Studio and
+// stored in data/rigs. A clip's `rig` names the one it is made for; none = the default rig.
 import path from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { writeJson } from './files.js';
 import { DATA } from './settings.js';
 import { RIG_R15, RIG_R6, solve, lowestY, withDefaults } from '../core/rig.js';
+import { buildCustomRig, cleanLabel } from '../core/custom.js';
 import { FEET } from '../core/anim.js';
-import { slug } from './library.js';
+import { slug, listClips } from './library.js';
 
 const RIGS = path.join(DATA, 'rigs');
 const rigPath = id => {
@@ -71,9 +73,11 @@ async function write(entry) {
   await writeJson(rigPath(entry.id), entry);
   return entry;
 }
-export async function addRig(name, data, description = null) {
+// custom: any Motor6D hierarchy (core/custom.js works out feet, limbs and limits); otherwise
+// the data has to be an R15 body with other proportions.
+export async function addRig(name, data, description = null, { custom = false } = {}) {
   const clean = String(name ?? '').replace(/[\p{Cc}]+/gu, ' ').trim().slice(0, 60) || 'Rig';
-  const rig = checkRig(data);
+  const rig = custom ? buildCustomRig(data, cleanLabel(clean)) : checkRig(data);
   let id = slug(clean) || 'rig', n = 2;
   while (existsSync(rigPath(id)) || Object.hasOwn(BUILTIN, id)) id = `${slug(clean) || 'rig'}-${n++}`;
   rig.id = id;
@@ -88,6 +92,12 @@ export async function renameRig(id, name) {
 }
 export async function deleteRig(id) {
   builtIn(id);
+  // Clips of a custom rig have no other body to fall back to: their joints would be lost.
+  const entry = await loadRig(id);
+  if (entry.rig?.family === 'custom') {
+    const using = (await listClips()).filter(c => c.rig === id).length;
+    if (using) throw Object.assign(new Error(`${using} clip${using === 1 ? ' is' : 's are'} made for this rig. Delete ${using === 1 ? 'it' : 'them'} first.`), { status: 409 });
+  }
   await unlink(rigPath(id)).catch(() => { throw Object.assign(new Error('Rig not found.'), { status: 404 }); });
   return { ok: true };
 }
