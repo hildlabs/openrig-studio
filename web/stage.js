@@ -2,7 +2,7 @@
 // renderer drawing into many tiles (scissor), used by the comparison grid.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RIG_R15, REGION, solve } from '/core/rig.js';
+import { RIG_R15, regionOf, rigTop, solve } from '/core/rig.js';
 import { sampleTracks } from '/core/anim.js';
 
 const COLORS = { arms: 0xf5cd30, head: 0xf5cd30, torso: 0x2a6fd6, legs: 0x4ba34b };
@@ -63,8 +63,8 @@ export function createRig(scene, rig = RIG_R15) {
   for (const [name, size] of Object.entries(rig.parts)) {
     if (name === rig.root) continue;
     const geo = new THREE.BoxGeometry(...(rig.display?.[name] ?? size));
-    const base = new THREE.MeshStandardMaterial({ color: COLORS[REGION(name)], roughness: 0.7 });
-    const mat = name === 'Head' ? [base, base, base, base, base, new THREE.MeshStandardMaterial({ map: FACE, roughness: 0.7 })] : base;
+    const base = new THREE.MeshStandardMaterial({ color: COLORS[regionOf(rig, name)], roughness: 0.7 });
+    const mat = name === 'Head' && rig.face !== false ? [base, base, base, base, base, new THREE.MeshStandardMaterial({ map: FACE, roughness: 0.7 })] : base;
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.matrixAutoUpdate = false;
@@ -152,8 +152,8 @@ export class Viewer {
   show(tracks, t) { this.rig.pose(tracks ? sampleTracks(tracks, t) : {}); }
   // Frames the camera so the whole clip (incl. jumps) stays in view, keeping the orbit direction.
   fit(tracks, length) {
-    let top = 5.6;
-    for (let t = 0; t <= length + 1e-6; t += 1 / 15) top = Math.max(top, solve(sampleTracks(tracks, t), this.rig.data).Head.p[1] + 0.7);
+    let top = this.rig.data.family === 'custom' ? 1.5 : 5.6;
+    for (let t = 0; t <= length + 1e-6; t += 1 / 15) top = Math.max(top, rigTop(solve(sampleTracks(tracks, t), this.rig.data), this.rig.data) + 0.7);
     const target = new THREE.Vector3(0, top / 2, 0);
     const dir = this.camera.position.clone().sub(this.controls.target).normalize();
     const dist = (top * 0.62) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));

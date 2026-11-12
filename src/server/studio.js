@@ -87,7 +87,48 @@ const seqFn = (anim, rig = RIG_R15) => `(function()\n${toLuauBuilder(anim, rig)}
 // For a clip made for an imported rig it gets that rig's HumanoidDescription (scales and body
 // parts); a preview rig of another body is replaced.
 const DESCRIPTION_KEYS = ['BodyTypeScale', 'DepthScale', 'HeadScale', 'HeightScale', 'ProportionScale', 'WidthScale', 'Head', 'Torso', 'LeftArm', 'RightArm', 'LeftLeg', 'RightLeg'];
-const ensureRig = (body = null) => `local function ensureRig()
+// A custom rig has no HumanoidDescription to build it from: the preview rig is a copy of the model
+// it was read from, which has to be somewhere in the place (Workspace, ServerStorage, ReplicatedStorage).
+const ensureCustomRig = body => {
+  const source = body.rig.source ?? body.name;
+  const missing = luaStr(`The model "${source}" this rig was read from isn't in the place. Put it into Workspace (or ServerStorage) and try again.`);
+  const noRoot = luaStr(`The model has no root part named "${body.rig.root}" any more; import the rig again.`);
+  return `local function ensureRig()
+	local body = ${luaStr(body.id)}
+	local rig = workspace:FindFirstChild("${RIG_NAME}")
+	if rig and (rig:GetAttribute("OpenRigBody") or "R15") ~= body then rig:Destroy() rig = nil end
+	if rig then return rig end
+	local source
+	for _, where in { workspace, game:GetService("ServerStorage"), game:GetService("ReplicatedStorage") } do
+		for _, d in where:GetDescendants() do
+			if d:IsA("Model") and d.Name == ${luaStr(source)} then source = d break end
+		end
+		if source then break end
+	end
+	if not source then return nil, ${missing} end
+	rig = source:Clone()
+	rig.Name = "${RIG_NAME}"
+	rig:SetAttribute("OpenRigBody", body)
+	local root = rig:FindFirstChild(${luaStr(body.rig.root)}, true)
+	if not root or not root:IsA("BasePart") then return nil, ${noRoot} end
+	local cam = workspace.CurrentCamera
+	local look = cam.CFrame.LookVector
+	local flat = Vector3.new(look.X, 0, look.Z)
+	if flat.Magnitude < 0.1 then flat = Vector3.new(0, 0, -1) end
+	local spot = cam.CFrame.Position + flat.Unit * 14
+	local hit = workspace:Raycast(spot + Vector3.new(0, 60, 0), Vector3.new(0, -500, 0))
+	local ground = hit and hit.Position.Y or spot.Y - 3
+	-- The rest pose stands the feet on the ground with the root part this high above it.
+	local y = ground + ${Number(body.rig.hipHeight) + body.rig.parts[body.rig.root][1] / 2}
+	rig.PrimaryPart = root
+	rig:PivotTo(CFrame.lookAt(Vector3.new(spot.X, y, spot.Z), Vector3.new(cam.CFrame.Position.X, y, cam.CFrame.Position.Z)))
+	root.Anchored = true
+	rig.Parent = workspace
+	return rig
+end`;
+};
+const ensureRig = (body = null) => (body?.rig?.family === 'custom' ? ensureCustomRig(body) : ensureHumanoidRig(body));
+const ensureHumanoidRig = (body = null) => `local function ensureRig()
 	local body = ${luaStr(body?.id ?? 'R15')}
 	local rig = workspace:FindFirstChild("${RIG_NAME}")
 	if rig and (rig:GetAttribute("OpenRigBody") or "R15") ~= body then rig:Destroy() rig = nil end
@@ -118,7 +159,8 @@ end`;
 // items: [{ anim, rig }]
 function pushLuau(items, body) {
   return `${ensureRig(body)}
-local rig = ensureRig()
+local rig, why = ensureRig()
+if not rig then return "ERR:" .. why end
 local storage = game:GetService("ServerStorage")
 local saves = storage:FindFirstChild("RBX_ANIMSAVES")
 if not saves then
@@ -148,9 +190,11 @@ return #names .. " → " .. slot:GetFullName()`;
 function previewLuau(anim, loops, body) {
   return `local seq = ${seqFn(anim, body?.rig)}()
 ${ensureRig(body)}
-local rig = ensureRig()
-local hum = rig:FindFirstChildOfClass("Humanoid")
-local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
+local rig, why = ensureRig()
+if not rig then return "ERR:" .. why end
+-- Humanoid rigs animate through their Humanoid; custom rigs may only have an AnimationController.
+local driver = rig:FindFirstChildOfClass("Humanoid") or rig:FindFirstChildOfClass("AnimationController") or Instance.new("AnimationController", rig)
+local animator = driver:FindFirstChildOfClass("Animator") or Instance.new("Animator", driver)
 for _, tr in animator:GetPlayingAnimationTracks() do tr:Stop(0) end
 local a = Instance.new("Animation")
 a.AnimationId = game:GetService("KeyframeSequenceProvider"):RegisterKeyframeSequence(seq)
@@ -175,6 +219,7 @@ return string.format("%.1f s", total)`;
 }
 // Plays on the local player's avatar in a running playtest (client side, replicates).
 function playtestLuau(anim, rig = RIG_R15) {
+  if (rig.family === 'custom') throw new Error('Play on my avatar needs an R15 or R6 clip. Use Play in Studio to see a custom rig on its preview rig.');
   const family = rig.family === 'R6' ? 'R6' : 'R15', other = family === 'R6' ? 'R15' : 'R6';
   return `local player = game:GetService("Players").LocalPlayer
 local char = player.Character or player.CharacterAdded:Wait()
@@ -259,6 +304,41 @@ if ok and desc then
 end
 return game:GetService("HttpService"):JSONEncode({ name = model.Name, rig = { parts = parts, joints = joints, hipHeight = hum.HipHeight }, description = description })`;
 
+// Reads any rig: the selected model (or the model a selected part belongs to) with its Motor6Ds
+// or AnimationConstraints. Only parts that are joined count; accessories welded on don't.
+// Pose names are part names, so the parts a joint connects must have unique names.
+const READ_CUSTOM_RIG = `local model
+for _, inst in game:GetService("Selection"):Get() do
+	local m = inst:IsA("Model") and inst or inst:FindFirstAncestorOfClass("Model")
+	while m and not (m:FindFirstChildWhichIsA("Motor6D", true) or m:FindFirstChildWhichIsA("AnimationConstraint", true)) do m = m:FindFirstAncestorOfClass("Model") end
+	if m then model = m break end
+end
+if not model then return "ERR:Select a rig in Studio first: a model whose parts are joined by Motor6Ds (or AnimationConstraints)." end
+local parts, joints, seen, dupe = {}, {}, {}, nil
+local function add(part)
+	if not part or not part:IsA("BasePart") or not part:IsDescendantOf(model) then return false end
+	if seen[part.Name] and seen[part.Name] ~= part then dupe = part.Name return false end
+	seen[part.Name] = part
+	parts[part.Name] = { part.Size.X, part.Size.Y, part.Size.Z }
+	return true
+end
+local function joint(part0, part1, c0, c1)
+	if not add(part0) or not add(part1) then return end
+	local a, b = { c0:GetComponents() }, { c1:GetComponents() }
+	table.insert(joints, { name = part1.Name, part0 = part0.Name, part1 = part1.Name,
+		c0 = { a[1], a[2], a[3] }, c0R = { table.unpack(a, 4, 12) },
+		c1 = { b[1], b[2], b[3] }, c1R = { table.unpack(b, 4, 12) } })
+end
+for _, d in model:GetDescendants() do
+	if d:IsA("Motor6D") then joint(d.Part0, d.Part1, d.C0, d.C1) end
+	if d:IsA("AnimationConstraint") and d.Attachment0 and d.Attachment1 then
+		joint(d.Attachment0.Parent, d.Attachment1.Parent, d.Attachment0.CFrame, d.Attachment1.CFrame)
+	end
+end
+if dupe then return "ERR:Two jointed parts are both named '" .. dupe .. "'. Animations address parts by name, so rename one of them." end
+if #joints == 0 then return "ERR:That model has no joints between parts." end
+return game:GetService("HttpService"):JSONEncode({ name = model.Name, rig = { parts = parts, joints = joints, source = model.Name } })`;
+
 const STOP_PLAYTEST = 'Roblox Studio is running a playtest. Stop it first.';
 export const pushClips = (studioId, items, body = null) => session(async s => {
   if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
@@ -277,6 +357,10 @@ export const listSaves = studioId => session(async s => {
   return JSON.parse(await luau(s, studioId, LIST_SAVES));
 });
 export const pullSave = (studioId, fullName) => session(async s => JSON.parse(await luau(s, studioId, pullLuau(fullName))));
+export const readCustomRig = studioId => session(async s => {
+  if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
+  return JSON.parse(await luau(s, studioId, READ_CUSTOM_RIG));
+});
 export const readRig = studioId => session(async s => {
   if (await inEdit(s, studioId) === 'play') throw new Error(STOP_PLAYTEST);
   return JSON.parse(await luau(s, studioId, READ_RIG));
