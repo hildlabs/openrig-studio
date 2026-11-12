@@ -61,7 +61,7 @@ Any hierarchy of parts joined by Motor6Ds (or AnimationConstraints) can be a rig
 | What | How it is found |
 |---|---|
 | Root | The part no joint moves (the one with the most parts below it if there are several); parts it doesn't reach are left out. |
-| Body | The root's child with the most parts below it. It gets the position offsets and is what grounding lowers. |
+| Body | The root's only child (a root with several jointed children is refused: offsets and grounding move the body part, so a second branch would stay behind). It gets the position offsets and is what grounding lowers. A body joint whose C0 is rotated is handled: the world-space lift is turned into the joint frame before it is added to `pos`. |
 | Feet | Leaves whose lowest corner is near the lowest point of the whole rig in the rest pose (`max(0.25, 8 % of the height)`). A rig can name its own `feet`, or `[]` for none. Without feet nothing is grounded. |
 | IK chains | A leaf, the part above it and the one above that, where the two upper parts carry nothing else and the upper one is neither the root nor the body. Chains ending at a foot are foot chains. |
 | Colliders and probes | Colliders: everything that is not a limb, biggest first. Probes: the end and the lower part of non-foot chains, unless they start inside a collider. |

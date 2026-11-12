@@ -89,7 +89,7 @@ const seqFn = (anim, rig = RIG_R15) => `(function()\n${toLuauBuilder(anim, rig)}
 const DESCRIPTION_KEYS = ['BodyTypeScale', 'DepthScale', 'HeadScale', 'HeightScale', 'ProportionScale', 'WidthScale', 'Head', 'Torso', 'LeftArm', 'RightArm', 'LeftLeg', 'RightLeg'];
 // A custom rig has no HumanoidDescription to build it from: the preview rig is a copy of the model
 // it was read from, which has to be somewhere in the place (Workspace, ServerStorage, ReplicatedStorage).
-const ensureCustomRig = body => {
+export const ensureCustomRig = body => {
   const source = body.rig.source ?? body.name;
   const missing = luaStr(`The model "${source}" this rig was read from isn't in the place. Put it into Workspace (or ServerStorage) and try again.`);
   const noRoot = luaStr(`The model has no root part named "${body.rig.root}" any more; import the rig again.`);

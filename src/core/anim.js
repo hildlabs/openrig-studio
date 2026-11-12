@@ -193,6 +193,16 @@ export function sampleTracks(tracks, t) {
 export const sample = (anim, t) => sampleTracks(buildTracks(anim), t);
 
 // ---------- Ground, IK, motion flow ----------
+// Moves a body pose up by dy studs in the world. The pose's pos is a translation in the joint's
+// frame (Part0 · C0 · Transform), so for a body joint whose C0 is rotated the world direction up
+// has to be turned into that frame first; adding dy to pos[1] would also slide the body sideways.
+// The root part never turns, so its frame is the world's.
+export function liftBody(pose, dy, rig) {
+  const c0R = rig.joints.find(j => j.part1 === rig.body)?.c0R;
+  const up = c0R ? rotV(transpose(c0R), [0, dy, 0]) : [0, dy, 0];
+  pose.pos = pose.pos.map((v, i) => round(v + up[i]));
+}
+
 // Shift the body (rig.body, LowerTorso on R15) so the lowest foot corner touches y = 0 on every keyframe that is not
 // marked contact:"air"; airborne keyframes are only lifted out of the ground.
 export function groundFeet(anim, rig = RIG_R15) {
@@ -207,7 +217,7 @@ export function groundFeet(anim, rig = RIG_R15) {
       const s = sample(anim, kf.t)[rig.body] ?? IDENTITY;
       kf.poses[rig.body] = { rot: eulerDeg(s.R).map(v => round(v, 2)), pos: s.p.map(v => round(v, 3)), ease: 'InOut' };
     }
-    kf.poses[rig.body].pos[1] = round(kf.poses[rig.body].pos[1] + delta);
+    liftBody(kf.poses[rig.body], delta, rig);
     if (Math.abs(delta) > 0.15) notes.push({ code: 'bodyLowered', t: kf.t, delta });
   }
   return notes;
@@ -248,7 +258,7 @@ function groundBetween(anim, rig = RIG_R15) {
       const kf = anim.keyframes.find(k => k.t === t) ?? { t, poses: {} };
       if (!anim.keyframes.includes(kf)) anim.keyframes.push(kf);
       kf.poses[body] = bodyPose(s, second);
-      kf.poses[body].pos[1] = round(kf.poses[body].pos[1] + depth);
+      liftBody(kf.poses[body], depth, rig);
       count++;
     }
     anim.keyframes.sort((x, y) => x.t - y.t);
@@ -532,7 +542,7 @@ export function retarget(input, from, to) {
     const delta = kf.contact === 'air' ? Math.max(0, -low) : -low;
     if (Math.abs(delta) >= 0.01) {
       const lt = keyAt(anim, kf, to.body);
-      lt.pos[1] = round(lt.pos[1] + delta);
+      liftBody(lt, delta, to);
       if (Math.abs(delta) > 0.15) fixes.push({ code: 'bodyLowered', t: kf.t, delta });
     }
     for (const [foot, start] of Object.entries(plantStart.get(kf))) {

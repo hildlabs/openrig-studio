@@ -12,7 +12,7 @@ process.env.OPENRIG_DATA = DATA_DIR;
 import { RIG_R15, RIG_R6, anglesDeg, solve, lowestY, rotV, regionOf, sameBody, point } from '../src/core/rig.js';
 import { buildCustomRig, cleanLabel } from '../src/core/custom.js';
 import { customPrompt, describeRig } from '../src/core/prompt.js';
-import { prepare, normalize, sample, inspect, measure, retarget, toRbxmx, toLuauBuilder, fromStudio, exportTree } from '../src/core/anim.js';
+import { prepare, normalize, sample, inspect, measure, retarget, toRbxmx, toLuauBuilder, fromStudio, exportTree, luaStr } from '../src/core/anim.js';
 import { solveChain, chainsOf, soleLift } from '../src/core/ik.js';
 import { motionStats } from '../src/core/metrics.js';
 import { renderSheet, renderStrip } from '../src/core/render.js';
@@ -139,6 +139,60 @@ test('a leaf that is only the lowest of its kind does not become a foot', () => 
   near(Math.min(...Object.keys(arm.parts).filter(n => n !== 'Root').map(n => lowestY(solve({}, arm), [n], arm))), 0, 1e-6);
   const out = prepare({ keyframes: [{ t: 0, ik: { Claw: [0.5, 5, -1] }, poses: {} }, { t: 1, poses: { Base: { rot: [0, 90, 0] } } }] }, { literal: true }, arm);
   assert.equal(out.anim.keyframes[0].poses.Base?.pos?.[1] ?? 0, 0, 'nothing is pulled to the ground');
+});
+
+test('grounding lifts a body whose joint frame is turned by a world-space amount', () => {
+  // The body's C0 and C1 are both turned 90° about z: at rest nothing changes, but pos is a
+  // translation in that frame, so world up is along the joint's x. Adding the lift to pos[1]
+  // would slide the body sideways and leave the feet in the air.
+  const Rz = anglesDeg([0, 0, 90]);
+  const parts = { Root: [2, 2, 1], Body: [2, 1, 1], LegA: [0.5, 2, 0.5], LegB: [0.5, 2, 0.5], FootA: [0.6, 0.2, 0.6], FootB: [0.6, 0.2, 0.6] };
+  const joints = [
+    { part0: 'Root', part1: 'Body', c0: [0, 0, 0], c1: [0, 0, 0], c0R: Rz, c1R: Rz },
+    { part0: 'Body', part1: 'LegA', c0: [-0.5, -0.5, 0], c1: [0, 1, 0] }, { part0: 'LegA', part1: 'FootA', c0: [0, -1, 0], c1: [0, 0.1, 0] },
+    { part0: 'Body', part1: 'LegB', c0: [0.5, -0.5, 0], c1: [0, 1, 0] }, { part0: 'LegB', part1: 'FootB', c0: [0, -1, 0], c1: [0, 0.1, 0] },
+  ];
+  const rig = buildCustomRig({ parts, joints }, 'Turned body');
+  assert.deepEqual(rig.feet.sort(), ['FootA', 'FootB']);
+  const rest = solve({}, rig).Body.p;
+  const sideways = anim => Math.max(...[0, 0.25, 0.5, 0.75, 1, 1.5, 2].map(t => Math.hypot(solve(sample(anim, t), rig).Body.p[0] - rest[0], solve(sample(anim, t), rig).Body.p[2] - rest[2])));
+  // Between keys: the body rolls about z and the feet dip; the lift is a world-space amount.
+  const roll = prepare({ keyframes: [{ t: 0, poses: { Body: { rot: [0, 0, 0] } } }, { t: 1, poses: { Body: { rot: [0, 0, 40] } } }, { t: 2, poses: { Body: { rot: [0, 0, 0] } } }] }, { literal: true }, rig);
+  assert.ok(roll.fixes.some(f => f.code === 'liftedBetween'), 'the dip between keys was lifted');
+  const bodyKeys = roll.anim.keyframes.filter(k => k.poses.Body);
+  assert.ok(bodyKeys.some(k => Math.abs(k.poses.Body.pos[0]) > 0.05 && k.poses.Body.pos[1] === 0), 'the lift is written along the joint\'s x');
+  assert.ok(sideways(roll.anim) < 0.01, 'the body does not slide');
+  let low = 0;
+  for (let t = 0; t <= 2; t += 1 / 30) low = Math.min(low, lowestY(solve(sample(roll.anim, t), rig), rig.feet, rig));
+  assert.ok(low > -0.06, `feet stay out of the ground (${low})`);
+  // On keys: a body raised in the world is lowered straight down again.
+  const rotated = [Rz[0], Rz[3], Rz[6], Rz[1], Rz[4], Rz[7], Rz[2], Rz[5], Rz[8]];
+  const up = rotV(rotated, [0, 1.5, 0]);
+  assert.ok(Math.abs(up[0]) > 1, 'the world-up lift is along x in the joint frame');
+  const floating = prepare({ keyframes: [{ t: 0, poses: {} }, { t: 1, poses: { Body: { rot: [0, 0, 0], pos: up } } }] }, { literal: true }, rig);
+  const end = solve(sample(floating.anim, 1), rig);
+  near(lowestY(end, rig.feet, rig), 0, 0.01);
+  assert.ok(sideways(floating.anim) < 0.01);
+  assert.ok(floating.fixes.some(f => f.code === 'bodyLowered'));
+});
+
+test('a model that is not rooted in a single body part is refused', () => {
+  const ok = creature();
+  const twoBranches = { parts: { ...ok.parts, Shadow: [4, 0.1, 4] }, joints: [...ok.joints, { part0: 'HumanoidRootPart', part1: 'Shadow', c0: [0, -1.5, 0], c1: [0, 0, 0] }] };
+  assert.throws(() => buildCustomRig(twoBranches), /carries 2 parts through separate joints \(Body, Shadow\)/);
+  assert.equal(buildCustomRig(ok).body, 'Body');
+});
+
+test('the Studio model name is kept exactly and only escaped inside Luau', async () => {
+  const name = 'Dog 🐕 "Rex"\n';
+  const rig = buildCustomRig({ ...creature(), source: name }, 'Dog');
+  assert.equal(rig.source, name);
+  assert.equal(buildCustomRig({ ...creature(), source: 'x'.repeat(1001) }, 'Dog').source, undefined);
+  const { ensureCustomRig } = await import('../src/server/studio.js');
+  const lua = ensureCustomRig({ id: 'dog', name: 'Dog', rig });
+  assert.ok(lua.includes(`d.Name == ${luaStr(name)}`), 'the preview looks for the exact model name');
+  assert.ok(lua.includes('\\240\\159\\144\\149') && !lua.includes('🐕') && !lua.includes('\n"Rex"'), 'unprintable and special characters are escaped');
+  assert.equal(lua.split('\n').filter(l => /^\s*if d:IsA\("Model"\)/.test(l)).length, 1);
 });
 
 // ---------- Pipeline on a non-humanoid ----------
@@ -281,6 +335,23 @@ test('the system prompt describes the rig that is actually there', () => {
   assert.ok(Object.keys(json.keyframes[1].ik).every(p => p in dog.chains));
   // The prompt's reach figures are plausible: a leg is ~2.4 studs, from thigh pivot to paw centre.
   assert.match(text, /`FLPaw` \(foot\): moved by `FLThigh` → `FLShin`, rest position \(−0\.8, 0\.15, −1\.5\), reaches at most ~(2\.\d|3\.\d) studs/);
+});
+
+test('every JSON in the prompt is valid JSON, also with negative coordinates', () => {
+  // Without the tail the first limb is a paw at x −0.8, z −1.5.
+  const data = creature();
+  const noTail = { ...data, parts: Object.fromEntries(Object.entries(data.parts).filter(([n]) => !n.startsWith('Tail'))), joints: data.joints.filter(j => !j.part1.startsWith('Tail')) };
+  for (const rig of [buildCustomRig(noTail, 'Dog'), dog]) {
+    const text = customPrompt(rig, TEMPLATE);
+    const blocks = [...text.matchAll(/```json\n([\s\S]*?)\n```/g)].map(m => m[1]);
+    assert.ok(blocks.length >= 2, 'the limb example and the answer example');
+    for (const b of blocks) assert.doesNotThrow(() => JSON.parse(b), b);
+    assert.ok(!blocks.some(b => b.includes('−')), 'no typographic minus inside JSON');
+  }
+  const first = customPrompt(buildCustomRig(noTail, 'Dog'), TEMPLATE).match(/"ik": \{ ("[^"]+"): (\[[^\]]*\])/);
+  assert.deepEqual(JSON.parse(first[2]).slice(0, 1), [-0.8]);
+  // Prose may keep the typographic minus.
+  assert.ok(customPrompt(dog, TEMPLATE).includes('(−0.8, 2.1, −1.5)'));
 });
 
 test('a rig without limbs gets a prompt without IK, one without feet says so', () => {

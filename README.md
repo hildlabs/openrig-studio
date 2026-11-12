@@ -73,7 +73,7 @@ Rigs that aren't R15 or R6, including non-humanoids, work too:
 
 OpenRig reads the part sizes and joints and works out the rest from the hierarchy, without any part names: the body part (the child of the root part), the feet (the leaves at the bottom of the rest pose), two-bone limbs for hand and foot targets, the regions for colours, the limits, and what limbs must not enter. The **system prompt is generated from that description** (parts, joint tree, where each joint's axes point, limits, limbs), and IK, foot locking, grounding, the checks, the contact sheet and the export all use it. Notes:
 
-- The rig has to face −Z (Roblox's front) with +Y up, and its root part needs a child that carries the body.
+- The rig has to face −Z (Roblox's front) with +Y up, and its root part must carry everything through a single joint to one body part (a root with several separate branches is refused, since the body offset and grounding move only the body part).
 - Pose names are part names, so the parts of the joints must have unique names with plain characters (letters, digits, space and `_ . ( ) -`).
 - A clip can't switch between a custom rig and another body once it has an animation, and a custom rig can only be deleted when no clip uses it.
 - **Play on my avatar** needs an R15 or R6 clip; use **Play in Studio** for custom rigs.

@@ -2,7 +2,7 @@
 // only reads what is there (part sizes, joints, C0/C1); everything the pipeline needs to know
 // about the body is found here, from the joint hierarchy and the rest pose, without part names:
 //
-//   body      the child of the root part that carries the rest of the body (gets the offsets)
+//   body      the one child of the root part: it carries the rest and gets the offsets
 //   feet      parts that stand on the ground in the rest pose (leaves that sit lowest)
 //   chains    two-bone limbs for IK: a leaf, the part above it and the one above that
 //   colliders what limbs must not enter; probes: the points of limbs that are checked
@@ -74,6 +74,10 @@ export function buildCustomRig(data, label = 'Rig') {
     }
   }
   if (!order.length) throw bad('the root part has no joints');
+  // Offsets and grounding move the body part, so everything has to hang below one: a second
+  // branch off the root would stay behind when the body jumps, or keep its feet in the ground.
+  const branches = order.filter(j => j.part0 === root).map(j => j.part1);
+  if (branches.length > 1) throw bad(`the root part ${root} carries ${branches.length} parts through separate joints (${branches.slice(0, 4).join(', ')}); everything must hang below a single body part`);
   if (seen.size > MAX_PARTS) throw bad(`it has ${seen.size} parts, at most ${MAX_PARTS} are supported`);
   const parts = Object.fromEntries([root, ...order.map(j => j.part1)].map(n => [n, data.parts[n].map(r4)]));
   const joints = order.map(j => {
@@ -88,10 +92,11 @@ export function buildCustomRig(data, label = 'Rig') {
 
   const rig = {
     id: 'custom', family: 'custom', label: cleanLabel(label), root, hipHeight: 0, face: false,
-    body: [...kids.get(root)].sort((a, b) => countBelow(kids, b) - countBelow(kids, a))[0],
+    body: kids.get(root)[0],
     parts, joints, feet: [], ik: false, chains: {}, colliders: [], probes: [], measured: [], limits: {}, regions: {},
   };
-  if (typeof data.source === 'string') rig.source = cleanLabel(data.source, '');
+  // The name of the Studio model, exactly as it is, to find it again; it is only escaped where it is put into Luau.
+  if (typeof data.source === 'string' && data.source && data.source.length <= 1000) rig.source = data.source;
 
   // ---- Rest pose with the root at the origin ----
   const rest = solve({}, rig, cf());
@@ -178,8 +183,6 @@ export function buildCustomRig(data, label = 'Rig') {
   return rig;
 }
 
-function countBelow(kids, n) { return 1 + kids.get(n).reduce((s, c) => s + countBelow(kids, c), 0); }
-
 // Rows of the dope sheet: unbranched runs of joints, so each limb and the spine get a group.
 function groupsOf(rig, kids) {
   const groups = [];
@@ -191,6 +194,5 @@ function groupsOf(rig, kids) {
     for (const c of kids.get(cur)) walk(c);
   };
   walk(rig.body);
-  for (const c of kids.get(rig.root)) if (c !== rig.body) walk(c);
   return groups;
 }

@@ -3,7 +3,10 @@
 import { solve, point, rotV, mulR, rootCFrame } from './rig.js';
 import { chainsOf } from './ik.js';
 
+// For reading: Unicode minus, rounded. Never inside JSON, which wants real numbers (num below).
 const f = (v, n = 2) => String(Math.round(v * 10 ** n) / 10 ** n).replace('-', '−');
+const num = (v, n = 1) => Math.round(v * 10 ** n) / 10 ** n + 0; // + 0 turns -0 into 0
+const json = p => JSON.stringify(p.map(v => num(v)));
 const vec = v => `(${v.map(x => f(x)).join(', ')})`;
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 // Where a world direction points, as a name when it is (nearly) an axis.
@@ -53,7 +56,7 @@ export function describeRig(rig) {
 Instead of guessing angles for these limbs, give targets per keyframe:
 
 \`\`\`json
-{ "t": 0.6, "ik": { ${chains.slice(0, 2).map(c => `"${c.end}": [${world[c.end].p.map(v => f(v, 1)).join(', ')}]`).join(', ')} }, "poses": { } }
+{ "t": 0.6, "ik": { ${chains.slice(0, 2).map(c => `${JSON.stringify(c.end)}: ${json(world[c.end].p)}`).join(', ')} }, "poses": { } }
 \`\`\`
 
 ${rows.join('\n')}
@@ -70,7 +73,7 @@ ${chains.some(c => c.foot) ? '- **Planted feet:** give a foot the same target in
 
   // An example that only uses names of this rig.
   const second = rig.joints.find(j => j.part1 !== body && !chains.some(c => c.joints.includes(j.part1) || c.end === j.part1))?.part1 ?? rig.joints.find(j => j.part1 !== body)?.part1 ?? body;
-  const ikEx = chains.length ? ` "ik": { "${chains[0].end}": [${world[chains[0].end].p.map(v => f(v, 1)).join(', ')}] },` : '';
+  const ikEx = chains.length ? ` "ik": { ${JSON.stringify(chains[0].end)}: ${json(world[chains[0].end].p)} },` : '';
   const example = `{
   "name": "Short name",
   "loop": false,
