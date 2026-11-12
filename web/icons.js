@@ -5,6 +5,7 @@ const P = {
   start: '<path d="M6 5v14M18 6l-9 6 9 6z"/>',
   end: '<path d="M18 5v14M6 6l9 6-9 6z"/>',
   loop: '<path d="M4 12a6 6 0 0 1 6-6h9M16 3l3 3-3 3M20 12a6 6 0 0 1-6 6H5M8 21l-3-3 3-3"/>',
+  image: '<path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.5h.01"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   send: '<path d="M5 12h13M13 6l6 6-6 6"/>',
   sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/>',

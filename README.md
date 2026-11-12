@@ -40,6 +40,7 @@ Notes for the OpenAI-compatible API:
 
 - Answers are long (8,000 to 20,000 tokens, thinking models more). If the app says the answer was cut off, raise *Max output tokens* in Settings. Ollama loads models with a small context by default; start it with a larger one, e.g. `OLLAMA_CONTEXT_LENGTH=32768`.
 - Visual review sends an image of the draft. Tick *The models can see images* only if yours can; otherwise review is skipped.
+- Reference images, GIFs and videos are sent as images too, so they need the same setting.
 - Small local models run, but expect much rougher results than the large hosted ones.
 
 ## Working with Roblox Studio

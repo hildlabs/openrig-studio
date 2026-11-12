@@ -12,6 +12,7 @@ import { RIG_R15, partsOf } from '../core/rig.js';
 import { rigOf } from './rigs.js';
 import { formatIssues } from '../core/messages.js';
 import { renderSheet } from '../core/render.js';
+import { referenceNote } from '../core/reference.js';
 
 const BASE_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system.md'), 'utf8');
 const R6_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system-r6.md'), 'utf8');
@@ -54,20 +55,22 @@ function context(clip, anim, rep, rig) {
   if (wishes) parts.push('## Earlier requests\n' + wishes);
   return parts;
 }
-function buildRequest(clip, wish, mode, rig) {
+function buildRequest(clip, wish, mode, rig, references = []) {
   const parts = [];
   if (mode !== 'create') {
     const cur = clip.history.find(h => h.id === clip.current);
     parts.push(...context(clip, clip.anim, cur ? report(cur) : '', rig));
   }
+  if (references.length) parts.push(referenceNote(references.length));
   parts.push(`## ${mode === 'create' ? 'Request for a new animation' : 'New request'}\n${wish}`);
   return parts.join('\n\n');
 }
-function buildReview(clip, wish, result, times, rig) {
+function buildReview(clip, wish, result, times, rig, references = []) {
   return [
     '## Original request\n' + wish,
     ...context(clip, result.anim, report(result), rig).map(p => p.replace('## Current animation', '## Your draft')),
     `## Contact sheet (contact-sheet.png)\nThe image shows your draft. Top row: three-quarter view from the front right. Bottom row: side view from the right; the character faces right in the image. Columns are the times ${times.map(t => `${t}s`).join(', ')}.`,
+    ...(references.length ? [referenceNote(references.length).replace('attached (', 'attached after the contact sheet (')] : []),
     '## Task\nReview the draft strictly, like an animation lead: does the motion read instantly? Clear silhouettes? Anything stiff, robotic, random or twisted? Limbs inside each other, floating feet, snaps between frames? Anticipation, timing, settle and weight? Does it match the request? Fix everything in the check report. Then return the improved, complete animation; in "notes" say briefly what you improved.',
   ].join('\n\n');
 }
@@ -88,16 +91,17 @@ export const getJob = id => jobs.get(id);
 // Draft → checks → optional visual review, without touching the library. clip only provides
 // the current animation and earlier requests ({ chat: [] } for a new one).
 // rig: the body the model works on (the default R15 one, or R6 with its own system prompt).
-export async function runPipeline({ clip, wish, mode, engine, system, review: withReview = true, onStep = () => {}, rig = RIG_R15 }) {
+export async function runPipeline({ clip, wish, mode, engine, system, review: withReview = true, onStep = () => {}, rig = RIG_R15, references = [] }) {
   let usage = null;
   const ask = async (text, images) => { const a = await callModel({ ...engine, system, text, images }); usage = addUsage(usage, a.usage); return a.text; };
 
   onStep('draft');
-  const request = buildRequest(clip, wish, mode, rig);
-  let json = extractJson(await ask(request));
+  const request = buildRequest(clip, wish, mode, rig, references);
+  // The reference frames go with every draft attempt, so a retry sees them too.
+  let json = extractJson(await ask(request, references));
   if (!json) {
     onStep('retry');
-    json = extractJson(await ask(request + '\n\nIMPORTANT: your last answer contained no valid JSON. Answer only with the ```json block.'));
+    json = extractJson(await ask(request + '\n\nIMPORTANT: your last answer contained no valid JSON. Answer only with the ```json block.', references));
   }
   if (!json) throw new Error('The model returned no readable animation.');
   // Joints this body doesn't have (e.g. R15 names for an R6 clip) are dropped; if that is most of
@@ -107,7 +111,7 @@ export async function runPipeline({ clip, wish, mode, engine, system, review: wi
     onStep('retry');
     const again = extractJson(await ask(`${request}
 
-IMPORTANT: this character is ${rig.family ?? 'R15'}. Your last answer used joints it doesn't have (${foreign.join(', ')}). Use only these pose names: ${partsOf(rig).join(', ')}.`));
+IMPORTANT: this character is ${rig.family ?? 'R15'}. Your last answer used joints it doesn't have (${foreign.join(', ')}). Use only these pose names: ${partsOf(rig).join(', ')}.`, references));
     if (!again || jointsMissingIn(again, rig).length) throw new Error(`The model answered with joints this ${rig.family ?? 'R15'} character doesn't have (${foreign.join(', ')}). Try again or pick another model.`);
     json = again;
   }
@@ -120,7 +124,7 @@ IMPORTANT: this character is ${rig.family ?? 'R15'}. Your last answer used joint
     onStep('review');
     try {
       const sheet = renderSheet(draft.anim, { rig });
-      better = extractJson(await ask(buildReview(clip, wish, draft, sheet.times, rig), [{ name: 'contact-sheet.png', data: sheet.png }]));
+      better = extractJson(await ask(buildReview(clip, wish, draft, sheet.times, rig, references), [{ name: 'contact-sheet.png', mime: 'image/png', data: sheet.png }, ...references]));
       if (!better) review = { applied: false, reason: 'noJson' };
       else {
         const r2 = prepare(better, { literal: true }, rig);
@@ -135,7 +139,7 @@ IMPORTANT: this character is ${rig.family ?? 'R15'}. Your last answer used joint
   return { draft, result, notes, plan, review, usage, draftUsage, raw };
 }
 
-async function generate(job, { id, prompt, engine, mode: requested, lang = 'en', fixedName }) {
+async function generate(job, { id, prompt, engine, mode: requested, lang = 'en', fixedName, references = [] }) {
   const clip = await loadClip(id);
   const mode = requested === 'improve' ? 'improve' : isRest(clip.anim) ? 'create' : 'edit';
   const wish = mode === 'improve' ? (prompt?.trim() ? `${IMPROVE}\nAlso: ${prompt.trim()}` : IMPROVE) : prompt.trim();
@@ -154,7 +158,7 @@ async function generate(job, { id, prompt, engine, mode: requested, lang = 'en',
   };
   const view = rig === RIG_R15 || r6 ? clip : { ...clip, anim: retarget(clip.anim, rig, RIG_R15).anim };
   const out = await runPipeline({
-    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; }, rig: r6 ? rig : RIG_R15,
+    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; }, rig: r6 ? rig : RIG_R15, references,
   });
   const { notes, plan, review, usage, draftUsage } = out;
   const draft = fit(out.draft), result = fit(out.result);
@@ -177,12 +181,13 @@ async function generate(job, { id, prompt, engine, mode: requested, lang = 'en',
 
 // Records the request in the chat right away, then generates in the background.
 export async function startJob(params) {
+  if (params.references?.length && !await acceptsImages(params.engine)) throw Object.assign(new Error(`This model cannot see images. Choose another model${params.engine.provider === 'compatible' ? ', or turn on "The models can see images" for the OpenAI-compatible API in Settings' : ''}.`), { status: 400 });
   if (busy.has(params.id)) throw Object.assign(new Error('This clip is already generating.'), { status: 409 });
   busy.add(params.id);
   try {
     const clip = await loadClip(params.id);
     const mode = params.mode === 'improve' ? 'improve' : 'chat';
-    clip.chat.push({ role: 'user', text: params.prompt?.trim() || '', mode, at: now() });
+    clip.chat.push({ role: 'user', text: params.prompt?.trim() || '', mode, ...(params.references?.length ? { references: params.references.length } : {}), at: now() });
     await saveClip(clip);
   } catch (e) { busy.delete(params.id); throw e; }
   const job = { id: Math.random().toString(36).slice(2), clipId: params.id, status: 'running', step: 'start', startedAt: Date.now(), review: params.review !== false };

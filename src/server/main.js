@@ -8,6 +8,7 @@ import { listProviders, testProvider } from './providers/index.js';
 import * as lib from './library.js';
 import { startJob, getJob, startCompare, compareStatus, listCompares, isBusy } from './generate.js';
 import * as studio from './studio.js';
+import { parseReferences } from './references.js';
 import * as rigs from './rigs.js';
 import { prepare, retarget, restClip, isRest, fromStudio, toRbxmx, toLuauBuilder } from '../core/anim.js';
 import { RIG_R15 } from '../core/rig.js';
@@ -17,7 +18,7 @@ const PORT = Number(process.env.PORT) || 4330;
 const HOST = process.env.HOST || '127.0.0.1';
 const WEB = path.join(ROOT, 'web');
 const CORE = path.join(ROOT, 'src', 'core');
-const BROWSER_CORE = ['rig.js', 'anim.js', 'ik.js', 'messages.js'];
+const BROWSER_CORE = ['rig.js', 'anim.js', 'ik.js', 'messages.js', 'reference.js'];
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json; charset=utf-8', '.woff2': 'font/woff2' };
 // No framing by other pages (clickjacking), no MIME sniffing, no referrer to the CDN.
 const SECURITY_HEADERS = { 'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
@@ -26,9 +27,9 @@ function send(res, status, body, type = 'application/json; charset=utf-8', heade
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...SECURITY_HEADERS, ...headers });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
-async function readBody(req) {
+async function readBody(req, limit = 4e6) {
   let raw = '';
-  for await (const chunk of req) { raw += chunk; if (raw.length > 4e6) throw Object.assign(new Error('Request too large.'), { status: 413 }); }
+  for await (const chunk of req) { raw += chunk; if (raw.length > limit) throw Object.assign(new Error('Request too large.'), { status: 413 }); }
   return raw ? JSON.parse(raw) : {};
 }
 const fileName = name => lib.slug(name).replace(/-/g, '_');
@@ -76,9 +77,11 @@ const routes = [
   ['DELETE', /^\/api\/clips\/([a-z0-9-]+)$/, async (req, [id]) => { await lib.trashClip(id); return { ok: true }; }],
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/duplicate$/, async (req, [id]) => lib.duplicateClip(id)],
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/generate$/, async (req, [id]) => {
-    const b = await readBody(req);
+    // Reference frames are images as data URLs: up to 8 of 1.5 MB, base64-encoded.
+    const b = await readBody(req, 18e6);
     if (b.mode !== 'improve' && !String(b.prompt ?? '').trim()) throw Object.assign(new Error('Describe the motion first.'), { status: 400 });
-    return { jobId: (await startJob({ id, prompt: String(b.prompt ?? ''), engine: engineOf(b), mode: b.mode, review: b.review !== false, lang: b.lang })).id };
+    const references = parseReferences(b.references);
+    return { jobId: (await startJob({ id, prompt: String(b.prompt ?? ''), engine: engineOf(b), mode: b.mode, review: b.review !== false, lang: b.lang, references })).id };
   }],
   ['POST', /^\/api\/clips\/([a-z0-9-]+)\/save$/, async (req, [id]) => {
     const clip = await lib.loadClip(id);

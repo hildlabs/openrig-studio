@@ -124,6 +124,15 @@ main { min-height: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .composer { padding: 10px 12px 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; min-width: 0; }
 .composer textarea { min-height: 70px; }
+.composer.drop { outline: 2px dashed var(--action); outline-offset: -4px; }
+.refs { display: grid; gap: 4px; }
+.refs .thumbs { display: flex; gap: 4px; overflow-x: auto; }
+.refs .thumbs img { height: 54px; width: auto; border-radius: var(--r-sm); border: 1px solid var(--line); flex: none; background: #fff; }
+.refs .refbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font: 13px var(--ui); color: var(--ink-2); }
+.refs .refbar label { display: inline-flex; align-items: center; gap: 4px; }
+.refs .refbar select { font-size: 13px; }
+.refs .link { border: 0; background: none; padding: 0; color: var(--action); font: inherit; cursor: pointer; margin-left: auto; }
+.refs .link:hover { text-decoration: underline; }
 .composer .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .composer .row .check { flex: 1 0 100%; }
 .composer .row .btn.primary { flex: 1; justify-content: center; }

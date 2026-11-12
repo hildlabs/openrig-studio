@@ -8,6 +8,7 @@ import { RIG_R15, RIG_R6, REGION, eulerDeg, partsOf, withDefaults } from '/core/
 import { buildTracks, sampleTracks, EASES } from '/core/anim.js';
 import { formatIssue } from '/core/messages.js';
 import { createUndo } from './undo.js';
+import { mountReferences, takeReferences, putBack, isReading } from './reference.js';
 
 const FPS = 60;
 const snap = v => Math.round(Math.max(0, v) * FPS) / FPS;
@@ -42,9 +43,12 @@ export function mount(el) {
       <div class="thread" id="thread" aria-live="polite"></div>
       <div class="job hidden" id="jobBar"><span class="spinner"></span><span id="jobText"></span></div>
       <div class="composer">
+        <div class="refs hidden" id="refs"></div>
         <textarea id="prompt" rows="3"></textarea>
+        <input type="file" id="refFile" accept="image/*,video/*" hidden>
         <div class="row">
           <label class="check" id="reviewLabel"><input type="checkbox" id="review"><span data-l="composer.review"></span></label>
+          <button class="btn icon quiet" id="refBtn" type="button"></button>
           <span class="grow"></span>
           <button class="btn" id="improveBtn"></button>
           <button class="btn primary" id="sendBtn"></button>
@@ -87,6 +91,7 @@ export function mount(el) {
   viewer = new Viewer($('#viewport', root));
   viewer.onPick = part => selectPart(part);
   wire();
+  mountReferences(root);
   relabel();
   requestAnimationFrame(frame);
 }
@@ -95,6 +100,9 @@ export function relabel() {
   for (const el of $$('[data-l]', root)) el.textContent = t(el.dataset.l);
   $('#prompt', root).placeholder = t('composer.placeholder');
   $('#reviewLabel', root).title = t('composer.reviewHint');
+  $('#refBtn', root).innerHTML = icon('image');
+  $('#refBtn', root).title = t('ref.attach');
+  $('#refBtn', root).setAttribute('aria-label', t('ref.attach'));
   $('#improveBtn', root).innerHTML = `${icon('sparkle')}${t('composer.improve')}`;
   $('#sendBtn', root).innerHTML = `${icon('send')}${t('composer.send')}`;
   $('#exportBtn', root).innerHTML = `${icon('download')}${t('actions.export')}`;
@@ -220,7 +228,7 @@ function renderChat() {
     return;
   }
   box.innerHTML = chat.map(m => {
-    if (m.role === 'user') return `<div class="msg-user">${m.mode === 'improve' ? `<span class="mode">${t('mode.improve')}</span>` : ''}${esc(m.text)}</div>`;
+    if (m.role === 'user') return `<div class="msg-user">${m.mode === 'improve' ? `<span class="mode">${t('mode.improve')}</span>` : ''}${m.references ? `<span class="mode">${t(m.references === 1 ? 'ref.sent.one' : 'ref.sent', { n: m.references })}</span>` : ''}${esc(m.text)}</div>`;
     if (m.role === 'error') return `<div class="msg-bot error">${esc(m.text)}</div>`;
     if (m.role !== 'assistant') return `<div class="msg-note">${esc(m.text)}</div>`;
     const plan = m.plan?.length ? `<details><summary>${t('msg.plan')}</summary><ol>${m.plan.map(p => `<li>${esc(p)}</li>`).join('')}</ol></details>` : '';
@@ -236,23 +244,33 @@ function setBusy(on, text = '') {
   $('#jobText', root).textContent = text;
   for (const id of ['#sendBtn', '#improveBtn']) $(id, root).disabled = on;
 }
+let sending = false; // between the click and the server's answer
 async function generate(mode) {
-  if (!S.clip || S.job) return;
+  if (!S.clip || S.job || sending) return;
   const prompt = $('#prompt', root).value.trim();
   if (mode !== 'improve' && !prompt) return $('#prompt', root).focus();
   const eng = engine();
   if (!eng.model && $('#engModel', root).value === CUSTOM) return toast(t('engine.customPlaceholder'), true);
+  // Frames still being read would be missing from the request.
+  if (isReading()) return toast(t('ref.wait'), true);
+  let sent = [];
+  sending = true;
   try {
     if (S.dirty) await save();
+    if (isReading()) return toast(t('ref.wait'), true); // attached while saving
+    sent = takeReferences(); // taken now, so frames attached later belong to the next request
     const review = $('#review', root).checked;
     prefs.set('review', review);
-    const { jobId } = await api(`/api/clips/${S.clip.id}/generate`, { method: 'POST', body: { prompt, ...eng, mode, review, lang: getLang() } });
+    let jobId;
+    try {
+      ({ jobId } = await api(`/api/clips/${S.clip.id}/generate`, { method: 'POST', body: { prompt, ...eng, mode, review, lang: getLang(), references: sent } }));
+    } catch (e) { putBack(sent); throw e; } // the request was refused: the frames stay for the next try
     $('#prompt', root).value = '';
     S.job = jobId;
     setBusy(true, t('job.start'));
     setClip(await api(`/api/clips/${S.clip.id}`), { keepTime: true, keepUndo: true });
     poll(jobId, S.clip.id);
-  } catch (e) { toast(e.message, true); }
+  } catch (e) { toast(e.message, true); } finally { sending = false; }
 }
 function poll(jobId, clipId) {
   const label = $('#engModel', root).value === CUSTOM ? $('#engCustom', root).value : $('#engModel', root).selectedOptions[0]?.textContent ?? '';
