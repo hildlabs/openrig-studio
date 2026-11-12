@@ -61,7 +61,7 @@ async function readWhole(res) {
 export async function runCompatible({ url, key, maxTokens }, { model, effort, system, text, images = [] }) {
   if (!model) throw new Error('Choose a model. Add model ids for the OpenAI-compatible API in Settings.');
   const content = images.length
-    ? [{ type: 'text', text }, ...images.map(img => ({ type: 'image_url', image_url: { url: `data:image/png;base64,${img.data.toString('base64')}` } }))]
+    ? [{ type: 'text', text }, ...images.map(img => ({ type: 'image_url', image_url: { url: `data:${img.mime ?? 'image/png'};base64,${img.data.toString('base64')}` } }))]
     : text;
   const res = await fetch(endpoint(url, '/chat/completions'), {
     method: 'POST',

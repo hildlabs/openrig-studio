@@ -23,6 +23,8 @@ Models may additionally use:
 9. **Grounding between keys:** grounding only sees keyframes, but between them legs can still push through the floor, most at take-offs where the legs stretch before the body rises. The clip is sampled at 60 fps; where a foot sinks more than 0.05 studs, the body gets a key at the deepest frame, lifted so the foot touches the ground, and the segment's easing is split (`InOut` → `In` + `Out`, …) so the motion flows through it.
 10. **Checks:** feet inside the ground, hands or forearms inside head or torso, joints snapping (limbs over 1600°/s, whole body over 2400°/s), loops whose end differs from the start.
 
+Reference input: an image, GIF or video attached in the director chat is reduced to at most 8 JPEG frames in the browser (a video is sampled at the middle of equal time slices, a GIF through `ImageDecoder` where the browser has it, otherwise its first frame). The server checks them (data URL, JPEG/PNG/WebP by magic bytes, 1.5 MB each) and sends them with the draft request, with a note that they are a guide for poses and timing, not motion capture. The visual review gets them after the contact sheet. They are not stored with the clip. Models that can't see images refuse the request up front instead of silently ignoring the frames.
+
 The findings go back to the model: the check report, measured positions of head, hands and feet per keyframe, and optionally a contact sheet image of the draft (visual review).
 
 ## Matching Roblox playback

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **Reference image, GIF or video.** The image button in the director chat (or drag and drop, or paste) attaches a picture, GIF or video. The browser takes up to 8 still frames (default 6, evenly spread over the clip, scaled to 768 px) and the model gets them as images, as a guide for poses and timing. This is not motion capture: cartoon or game footage, GIFs and moves you can't film yourself work; for filmed people, Studio's Animation Capture plus *Import from Studio* is still the better route. Needs a model that can see images (for the OpenAI-compatible API, tick *The models can see images*). The images are not stored with the clip, only how many were sent.
+
 ## 0.2.0
 
 ### New

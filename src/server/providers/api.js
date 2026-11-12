@@ -19,7 +19,7 @@ export async function runAnthropic(apiKey, { model, effort, system, text, images
   const Anthropic = await load('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey });
   const content = [
-    ...images.map(img => ({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: img.data.toString('base64') } })),
+    ...images.map(img => ({ type: 'image', source: { type: 'base64', media_type: img.mime ?? 'image/png', data: img.data.toString('base64') } })),
     { type: 'text', text },
   ];
   const params = {
@@ -53,7 +53,7 @@ export async function runOpenAI(apiKey, { model, effort, system, text, images = 
   const client = new OpenAI({ apiKey });
   const content = [
     { type: 'input_text', text },
-    ...images.map(img => ({ type: 'input_image', image_url: `data:image/png;base64,${img.data.toString('base64')}` })),
+    ...images.map(img => ({ type: 'input_image', image_url: `data:${img.mime ?? 'image/png'};base64,${img.data.toString('base64')}` })),
   ];
   let response;
   try {
