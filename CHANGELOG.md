@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Live demo** at https://hildlabs.github.io/openrig-studio/: the real web app with a browser-only stand-in for the server (`demo/`). Play and edit the example clips, history, R6, contact sheets and `.rbxmx` / Luau export work; generating and the Studio bridge need a local install. `npm run build-demo` builds it, a workflow publishes it to GitHub Pages.
+
 ## 0.2.0
 
 ### New

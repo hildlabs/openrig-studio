@@ -20,7 +20,8 @@
     "start": "node src/server/main.js",
     "test": "node --test",
     "bench": "node scripts/bench.mjs",
-    "save-examples": "node scripts/save-examples.mjs"
+    "save-examples": "node scripts/save-examples.mjs",
+    "build-demo": "node demo/build.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.2.0",
