@@ -14,11 +14,12 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node src/server/main.js",
     "test": "node --test",
+    "lint": "eslint .",
     "bench": "node scripts/bench.mjs",
     "save-examples": "node scripts/save-examples.mjs",
     "build-demo": "node demo/build.mjs"
@@ -35,5 +36,10 @@
     "claude",
     "codex",
     "ai"
-  ]
+  ],
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0"
+  }
 }

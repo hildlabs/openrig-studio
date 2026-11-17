@@ -5,7 +5,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # One PR a week for all minor and patch updates instead of one per package and version.
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

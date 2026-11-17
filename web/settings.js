@@ -1,5 +1,5 @@
 // Settings: providers (subscriptions and API keys), Roblox Studio connection, project style.
-import { api, $, $$, esc, toast } from './api.js';
+import { api, $, esc, toast } from './api.js';
 import { t } from './i18n.js';
 import { icon } from './icons.js';
 import { store, reloadProviders, refreshStudios } from './app.js';

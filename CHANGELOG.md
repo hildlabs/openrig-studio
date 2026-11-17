@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Node.js 22 or newer.** Node 20 gets no security updates since April 2026. OpenRig Studio still starts on it, with a warning.
+- For contributors: `npm run lint` (ESLint), the CI installs the API SDKs and checks the calls the app makes into them, and Dependabot sends one grouped update PR a week.
 - **Claude Fable 5.2** replaces Fable 5.1 for Claude Code and the Anthropic API, with the refusal fallback. A remembered Fable 5.1 choice moves to Fable 5.2 on its own.
 - Fixed: text sent to the server could get a broken character (ä, ß, emoji) when it arrived in more than one piece. Broken JSON is now answered with 400 instead of 500, and unexpected server errors are logged with their stack.
 - Finished generation jobs are dropped from memory after an hour, so a server that runs for days doesn't keep every result.
