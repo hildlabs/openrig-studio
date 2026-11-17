@@ -1,5 +1,5 @@
 // Library: folders, search, sort, filmstrip thumbnails, rename, star, bulk actions.
-import { api, $, $$, esc, prefs, toast, menu, confirmDialog, promptDialog } from './api.js';
+import { api, $, esc, prefs, toast, menu, confirmDialog, promptDialog } from './api.js';
 import { t, ago } from './i18n.js';
 import { icon } from './icons.js';
 import { openClip, studioId } from './app.js';

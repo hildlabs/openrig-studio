@@ -19,7 +19,7 @@ Generate Roblox R15 and R6 animations with the AI you already pay for. Describe 
 
 ## Quick start
 
-You need [Node.js](https://nodejs.org) 20 or newer and at least one AI provider:
+You need [Node.js](https://nodejs.org) 22 or newer and at least one AI provider:
 
 | Provider | What you need |
 |---|---|
@@ -32,7 +32,7 @@ You need [Node.js](https://nodejs.org) 20 or newer and at least one AI provider:
 ```sh
 git clone https://github.com/hildlabs/openrig-studio.git
 cd openrig-studio
-npm install        # only needed for API keys
+npm install --omit=dev   # only needed for API keys
 npm start          # or double-click start.cmd (Windows) / run ./start.sh (macOS, Linux)
 ```
 
@@ -114,10 +114,10 @@ Issues and pull requests are welcome. Most of the code was written with Claude C
 
 If a generated clip looks wrong, open an issue with the *Animation looks wrong* template: the prompt, the model and the exported clip make it reproducible. Before opening a pull request:
 
-- Run `npm test`. It checks the Roblox reference values and that every example clip passes the checks.
+- Run `npm install` (with the dev tools), then `npm test` and `npm run lint`. The tests check the Roblox reference values, that every example clip passes the checks, and the calls into the API SDKs.
 - If you changed the system prompt or the animation pipeline, run the benchmark before and after and mention the result (see below).
 - If you improved the example clips in the library folder *Examples*, run `npm run save-examples` to write them back to `examples/`.
-- Keep it dependency-free in `src/core/` and `web/`; the API SDKs are the only packages.
+- Keep it dependency-free in `src/core/` and `web/`; the API SDKs are the only runtime packages (ESLint is a dev tool).
 
 ### Benchmark
 
@@ -145,4 +145,4 @@ MIT, see [LICENSE](LICENSE).
 
 ## Kurz auf Deutsch
 
-OpenRig Studio erzeugt Roblox-Animationen für R15 und R6 mit den KI-Abos, die du schon hast (Claude Code, Codex CLI), mit API-Keys oder über jede OpenAI-kompatible API (DeepSeek, Qwen, Kimi, OpenRouter, Ollama …). Node.js 20+ installieren, Repo klonen, `npm start` ausführen bzw. `start.cmd` doppelklicken und <http://localhost:4330> öffnen. In den Einstellungen siehst du, welche Anbieter gefunden wurden; oben rechts schaltest du die Oberfläche auf Deutsch um. Ohne Installation ausprobieren: [Live-Demo](https://hildlabs.github.io/openrig-studio/) (Beispiel-Clips abspielen und bearbeiten, Generieren nur lokal).
+OpenRig Studio erzeugt Roblox-Animationen für R15 und R6 mit den KI-Abos, die du schon hast (Claude Code, Codex CLI), mit API-Keys oder über jede OpenAI-kompatible API (DeepSeek, Qwen, Kimi, OpenRouter, Ollama …). Node.js 22+ installieren, Repo klonen, `npm start` ausführen bzw. `start.cmd` doppelklicken und <http://localhost:4330> öffnen. In den Einstellungen siehst du, welche Anbieter gefunden wurden; oben rechts schaltest du die Oberfläche auf Deutsch um. Ohne Installation ausprobieren: [Live-Demo](https://hildlabs.github.io/openrig-studio/) (Beispiel-Clips abspielen und bearbeiten, Generieren nur lokal).

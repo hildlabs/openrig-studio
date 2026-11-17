@@ -29,9 +29,9 @@ export async function runAnthropic(apiKey, { model, effort, system, text, images
       ? await client.beta.messages.stream({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }).finalMessage()
       : await client.messages.stream(params).finalMessage();
   } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) throw new Error('The Anthropic API key was rejected. Check it in Settings.');
-    if (error instanceof Anthropic.RateLimitError) throw new Error('Anthropic rate limit reached. Try again in a moment.');
-    if (error instanceof Anthropic.APIError) throw new Error(`Anthropic API error ${error.status ?? ''}: ${error.message}`);
+    if (error instanceof Anthropic.AuthenticationError) throw new Error('The Anthropic API key was rejected. Check it in Settings.', { cause: error });
+    if (error instanceof Anthropic.RateLimitError) throw new Error('Anthropic rate limit reached. Try again in a moment.', { cause: error });
+    if (error instanceof Anthropic.APIError) throw new Error(`Anthropic API error ${error.status ?? ''}: ${error.message}`, { cause: error });
     throw error;
   }
   if (message.stop_reason === 'refusal') throw new Error(`The model declined the request${message.stop_details?.category ? ` (${message.stop_details.category})` : ''}.`);
@@ -59,9 +59,9 @@ export async function runOpenAI(apiKey, { model, effort, system, text, images = 
       ...(effort ? { reasoning: { effort } } : {}),
     });
   } catch (error) {
-    if (error instanceof OpenAI.AuthenticationError) throw new Error('The OpenAI API key was rejected. Check it in Settings.');
-    if (error instanceof OpenAI.RateLimitError) throw new Error('OpenAI rate limit reached. Try again in a moment.');
-    if (error instanceof OpenAI.APIError) throw new Error(`OpenAI API error ${error.status ?? ''}: ${error.message}`);
+    if (error instanceof OpenAI.AuthenticationError) throw new Error('The OpenAI API key was rejected. Check it in Settings.', { cause: error });
+    if (error instanceof OpenAI.RateLimitError) throw new Error('OpenAI rate limit reached. Try again in a moment.', { cause: error });
+    if (error instanceof OpenAI.APIError) throw new Error(`OpenAI API error ${error.status ?? ''}: ${error.message}`, { cause: error });
     throw error;
   }
   const u = response.usage ?? {};

@@ -266,6 +266,7 @@ server.on('error', e => {
   process.exit(1);
 });
 server.listen(PORT, HOST, async () => {
+  if (Number(process.versions.node.split('.')[0]) < 22) console.warn(`  Node.js ${process.versions.node} is no longer supported and gets no security updates. Please install Node.js 22 or newer from https://nodejs.org.`);
   console.log(`OpenRig Studio is running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   if (!LOOPBACK) console.warn(`  WARNING: HOST=${HOST} makes OpenRig Studio reachable from other devices, without a password.\n  Anyone on your network can use your AI subscriptions and library. Unset HOST to keep it local.`);
   const examples = await lib.seedExamples().catch(e => { console.error(`Could not add the example clips: ${e.message}`); return 0; });
