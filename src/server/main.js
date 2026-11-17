@@ -26,10 +26,19 @@ function send(res, status, body, type = 'application/json; charset=utf-8', heade
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...SECURITY_HEADERS, ...headers });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
-async function readBody(req) {
-  let raw = '';
-  for await (const chunk of req) { raw += chunk; if (raw.length > 4e6) throw Object.assign(new Error('Request too large.'), { status: 413 }); }
-  return raw ? JSON.parse(raw) : {};
+// Chunks are joined as bytes before decoding, so a character split between two chunks (ä, ß, emoji)
+// stays intact. Broken JSON is the client's fault (400), not a server error.
+async function readBody(req, limit = 4e6) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw Object.assign(new Error('Request too large.'), { status: 413 });
+    chunks.push(chunk);
+  }
+  if (!size) return {};
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { throw Object.assign(new Error('The request is not valid JSON.'), { status: 400 }); }
 }
 const fileName = name => lib.slug(name).replace(/-/g, '_');
 const engineOf = b => ({ provider: String(b.provider ?? ''), model: String(b.model ?? ''), effort: String(b.effort ?? '') });
@@ -245,7 +254,9 @@ const server = http.createServer(async (req, res) => {
     }
     send(res, 404, { error: 'Not found.' });
   } catch (e) {
-    send(res, e.status ?? 500, { error: e.message });
+    // Expected errors carry a status; anything else is a bug and goes to the console with its stack.
+    if (!e.status) console.error(`${req.method} ${url.pathname} failed:`, e);
+    if (!res.headersSent) send(res, e.status ?? 500, { error: e.message });
   }
 });
 

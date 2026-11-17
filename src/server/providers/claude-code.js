@@ -5,13 +5,7 @@ import path from 'node:path';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { which, firstExisting, home, run } from '../process.js';
 
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-export const MODELS = [
-  { id: 'claude-opus-5-5', label: 'Opus 5.5', efforts: EFFORTS },
-  { id: 'claude-fable-5-1', label: 'Fable 5.1', efforts: EFFORTS },
-  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', efforts: EFFORTS },
-  { id: 'claude-haiku-5-5', label: 'Haiku 5.5', efforts: EFFORTS },
-];
+export { CLAUDE_MODELS as MODELS } from './claude-models.js';
 
 export const find = settings => firstExisting([settings.claudePath, which('claude'),
   path.join(home, '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude')]);
