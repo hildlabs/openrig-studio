@@ -9,7 +9,7 @@ async function load(name) {
   catch { throw new Error(`The package "${name}" is missing. Run "npm install" in the OpenRig Studio folder to use API keys.`); }
 }
 
-export async function runAnthropic(apiKey, { model, effort, system, text, images = [] }) {
+export async function runAnthropic(apiKey, { model, effort, system, text, images = [], schema, signal }) {
   const Anthropic = await load('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey });
   const content = [
@@ -21,14 +21,16 @@ export async function runAnthropic(apiKey, { model, effort, system, text, images
     max_tokens: 64000,
     system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content }],
-    ...(effort ? { output_config: { effort } } : {}),
+    // Structured output: the answer is always JSON in the shape of the schema.
+    ...(effort || schema ? { output_config: { ...(effort ? { effort } : {}), ...(schema ? { format: { type: 'json_schema', schema } } : {}) } } : {}),
   };
   let message;
   try {
     message = FALLBACK_MODELS.has(model)
-      ? await client.beta.messages.stream({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }).finalMessage()
-      : await client.messages.stream(params).finalMessage();
+      ? await client.beta.messages.stream({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, { signal }).finalMessage()
+      : await client.messages.stream(params, { signal }).finalMessage();
   } catch (error) {
+    if (signal?.aborted) throw signal.reason;
     if (error instanceof Anthropic.AuthenticationError) throw new Error('The Anthropic API key was rejected. Check it in Settings.', { cause: error });
     if (error instanceof Anthropic.RateLimitError) throw new Error('Anthropic rate limit reached. Try again in a moment.', { cause: error });
     if (error instanceof Anthropic.APIError) throw new Error(`Anthropic API error ${error.status ?? ''}: ${error.message}`, { cause: error });
@@ -42,7 +44,7 @@ export async function runAnthropic(apiKey, { model, effort, system, text, images
   };
 }
 
-export async function runOpenAI(apiKey, { model, effort, system, text, images = [] }) {
+export async function runOpenAI(apiKey, { model, effort, system, text, images = [], signal }) {
   const OpenAI = await load('openai');
   const client = new OpenAI({ apiKey });
   const content = [
@@ -57,8 +59,9 @@ export async function runOpenAI(apiKey, { model, effort, system, text, images = 
       input: [{ role: 'user', content }],
       max_output_tokens: 64000,
       ...(effort ? { reasoning: { effort } } : {}),
-    });
+    }, { signal });
   } catch (error) {
+    if (signal?.aborted) throw signal.reason;
     if (error instanceof OpenAI.AuthenticationError) throw new Error('The OpenAI API key was rejected. Check it in Settings.', { cause: error });
     if (error instanceof OpenAI.RateLimitError) throw new Error('OpenAI rate limit reached. Try again in a moment.', { cause: error });
     if (error instanceof OpenAI.APIError) throw new Error(`OpenAI API error ${error.status ?? ''}: ${error.message}`, { cause: error });

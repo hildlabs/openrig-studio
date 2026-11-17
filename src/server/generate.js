@@ -13,6 +13,7 @@ import { RIG_R15, partsOf } from '../core/rig.js';
 import { rigOf } from './rigs.js';
 import { formatIssues } from '../core/messages.js';
 import { renderSheet } from '../core/render.js';
+import { animationSchema } from '../core/schema.js';
 
 const BASE_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system.md'), 'utf8');
 const R6_PROMPT = readFileSync(path.join(ROOT, 'prompts', 'system-r6.md'), 'utf8');
@@ -89,13 +90,28 @@ const busy = new Set();
 const forgetLater = job => setTimeout(() => jobs.delete(job.id), JOB_TTL_MS).unref();
 export const isBusy = id => busy.has(id);
 export const getJob = id => jobs.get(id);
+// Stops a running generation; the model call is cancelled and nothing is added to the clip.
+export function stopJob(id) {
+  const job = jobs.get(id);
+  if (!job) throw Object.assign(new Error('Unknown job.'), { status: 404 });
+  if (job.status === 'running') job.controller.abort();
+  return job;
+}
 
 // Draft → checks → optional visual review, without touching the library. clip only provides
 // the current animation and earlier requests ({ chat: [] } for a new one).
 // rig: the body the model works on (the default R15 one, or R6 with its own system prompt).
-export async function runPipeline({ clip, wish, mode, engine, system, review: withReview = true, onStep = () => {}, rig = RIG_R15 }) {
+// signal: stops the pipeline (and the running model call) when the user stops the generation.
+export async function runPipeline({ clip, wish, mode, engine, system, review: withReview = true, onStep = () => {}, rig = RIG_R15, signal }) {
   let usage = null;
-  const ask = async (text, images) => { const a = await callModel({ ...engine, system, text, images }); usage = addUsage(usage, a.usage); return a.text; };
+  // Providers that support structured output get the answer's schema; the others ignore it.
+  const schema = animationSchema(rig);
+  const ask = async (text, images) => {
+    signal?.throwIfAborted();
+    const a = await callModel({ ...engine, system, text, images, schema, signal });
+    usage = addUsage(usage, a.usage);
+    return a.text;
+  };
 
   onStep('draft');
   const request = buildRequest(clip, wish, mode, rig);
@@ -133,7 +149,10 @@ IMPORTANT: this character is ${rig.family ?? 'R15'}. Your last answer used joint
         if (score(r2) <= score(draft) + 1) { result = r2; notes = better.notes ?? notes; plan = better.plan ?? plan; review = { applied: true }; }
         else review = { applied: false, reason: 'worse', draft: score(draft), review: score(r2) };
       }
-    } catch (e) { review = { applied: false, reason: 'error', error: e.message }; }
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      review = { applied: false, reason: 'error', error: e.message };
+    }
   }
   // The model's own answers, so the benchmark can replay them through a changed pipeline.
   const raw = { draft: json, review: better, final: review?.applied ? better : json };
@@ -159,7 +178,7 @@ async function generate(job, { id, prompt, engine, mode: requested, lang = 'en',
   };
   const view = rig === RIG_R15 || r6 ? clip : { ...clip, anim: retarget(clip.anim, rig, RIG_R15).anim };
   const out = await runPipeline({
-    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; }, rig: r6 ? rig : RIG_R15,
+    clip: view, wish, mode, engine, system, review: job.review, onStep: step => { job.step = step; }, rig: r6 ? rig : RIG_R15, signal: job.controller.signal,
   });
   const { notes, plan, review, usage, draftUsage } = out;
   const draft = fit(out.draft), result = fit(out.result);
@@ -191,12 +210,16 @@ export async function startJob(params) {
     await saveClip(clip);
   } catch (e) { busy.delete(params.id); throw e; }
   const job = { id: randomUUID().replaceAll('-', ''), clipId: params.id, status: 'running', step: 'start', startedAt: Date.now(), review: params.review !== false };
+  // Not part of the job's JSON for the browser.
+  Object.defineProperty(job, 'controller', { value: new AbortController() });
   jobs.set(job.id, job);
   generate(job, params)
     .then(clip => Object.assign(job, { status: 'done', clip }))
     .catch(async e => {
-      Object.assign(job, { status: 'error', error: e.message });
-      try { const clip = await loadClip(params.id); clip.chat.push({ role: 'error', text: e.message, at: now() }); await saveClip(clip); } catch { /* clip gone */ }
+      const stopped = job.controller.signal.aborted;
+      const text = stopped ? 'Generation stopped.' : e.message;
+      Object.assign(job, { status: stopped ? 'stopped' : 'error', error: text });
+      try { const clip = await loadClip(params.id); clip.chat.push({ role: 'error', text, at: now() }); await saveClip(clip); } catch { /* clip gone */ }
     })
     .finally(() => { busy.delete(params.id); forgetLater(job); });
   return job;

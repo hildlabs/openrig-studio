@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Stop a generation.** The bar under the director chat has a *Stop* button. The running model call is cancelled (Claude Code and Codex are ended, API requests aborted) and nothing is added to the clip.
+- **Structured output for the Anthropic API.** The answer is checked against the animation schema by the API itself, so it always comes back as valid JSON in the right shape.
+- **Access token for `HOST=0.0.0.0`.** Other devices on the network need the link with `?token=…` that the terminal shows once; the computer running OpenRig Studio doesn't. Set `OPENRIG_TOKEN` for a fixed token.
+- The library list re-reads only clips that changed, instead of every clip with its whole history on every refresh.
 - **Node.js 22 or newer.** Node 20 gets no security updates since April 2026. OpenRig Studio still starts on it, with a warning.
 - For contributors: `npm run lint` (ESLint), the CI installs the API SDKs and checks the calls the app makes into them, and Dependabot sends one grouped update PR a week.
 - **Claude Fable 5.2** replaces Fable 5.1 for Claude Code and the Anthropic API, with the refusal fallback. A remembered Fable 5.1 choice moves to Fable 5.2 on its own.

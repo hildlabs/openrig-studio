@@ -29,7 +29,7 @@ export function models() {
   return [{ id: '', label: 'Default model', efforts: ['low', 'medium', 'high'] }];
 }
 
-export async function runCodex(exe, { model, effort, system, text, images = [] }) {
+export async function runCodex(exe, { model, effort, system, text, images = [], signal }) {
   const work = await mkdtemp(path.join(os.tmpdir(), 'openrig-'));
   try {
     const last = path.join(work, 'last.md');
@@ -39,7 +39,8 @@ export async function runCodex(exe, { model, effort, system, text, images = [] }
     if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
     for (const img of images) args.push(`--image=${path.join(work, img.name)}`);
     args.push('-');
-    const r = await run(exe, args, { input: `${system}\n\n---\n\nDo not use tools or files; answer directly.\n\n${text}`, cwd: work });
+    const r = await run(exe, args, { input: `${system}\n\n---\n\nDo not use tools or files; answer directly.\n\n${text}`, cwd: work, signal });
+    if (r.aborted) throw signal.reason;
     if (r.timedOut) throw new Error('Codex did not answer within 15 minutes.');
     let answer = '';
     try { answer = await readFile(last, 'utf8'); } catch { /* no final message */ }

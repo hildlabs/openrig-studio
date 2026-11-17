@@ -30,18 +30,21 @@ export const home = os.homedir();
 
 // Windows .cmd/.bat shims need cmd.exe; arguments are quoted verbatim so paths with spaces work.
 const quoteWin = a => `"${String(a).replace(/"/g, '""')}"`;
-export function run(cmd, args, { input, cwd, timeoutMs = 15 * 60000, env } = {}) {
+// signal: an AbortSignal that stops the program (the user stopped a generation); the result then has aborted: true.
+export function run(cmd, args, { input, cwd, timeoutMs = 15 * 60000, env, signal } = {}) {
   return new Promise(resolve => {
     const shim = WIN && /\.(cmd|bat)$/i.test(cmd);
     const child = shim
       ? spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"${[cmd, ...args].map(quoteWin).join(' ')}"`], { cwd, env, windowsHide: true, windowsVerbatimArguments: true, stdio: ['pipe', 'pipe', 'pipe'] })
       : spawn(cmd, args, { cwd, env, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '', timedOut = false;
+    let stdout = '', stderr = '', timedOut = false, aborted = false;
     const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    const stop = () => { aborted = true; child.kill(); };
+    if (signal?.aborted) stop(); else signal?.addEventListener('abort', stop, { once: true });
     child.stdout.on('data', d => { stdout += d; });
     child.stderr.on('data', d => { stderr += d; });
     child.on('error', e => { stderr += String(e); });
-    child.on('close', code => { clearTimeout(timer); resolve({ code: timedOut ? -1 : code, stdout, stderr, timedOut }); });
+    child.on('close', code => { clearTimeout(timer); signal?.removeEventListener('abort', stop); resolve({ code: timedOut || aborted ? -1 : code, stdout, stderr, timedOut, aborted }); });
     child.stdin.on('error', () => { /* process exited early */ });
     child.stdin.end(input ?? '');
   });
