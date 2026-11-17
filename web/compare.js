@@ -8,7 +8,7 @@ import { buildTracks } from '/core/anim.js';
 
 const C = { record: null, timer: null, t: 0, playing: true, speed: 1, mode: prefs.get('cmpMode', 'stage'), clips: new Map() };
 let root, multi, last = performance.now();
-const DEFAULT_RUNS = ['claude-code:claude-opus-5-5', 'codex:gpt-6-astra'];
+const DEFAULT_RUNS = ['claude-code:claude-opus-5-5', 'claude-code:claude-fable-5-2', 'codex:gpt-6-astra'];
 
 export function mount(el) {
   root = el;
