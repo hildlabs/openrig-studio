@@ -24,7 +24,7 @@
     "build-demo": "node demo/build.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.2.0",
+    "@anthropic-ai/sdk": "^1.8.0",
     "openai": "^7.43.0"
   },
   "keywords": [
