@@ -1,12 +1,14 @@
 // OpenRig Studio server: serves the web app and a small JSON API on http://127.0.0.1:4330.
 import http from 'node:http';
+import os from 'node:os';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { ROOT, loadSettings, saveSettings, secret, mask } from './settings.js';
 import { listProviders, testProvider } from './providers/index.js';
 import * as lib from './library.js';
-import { startJob, getJob, startCompare, compareStatus, listCompares, isBusy } from './generate.js';
+import { startJob, getJob, stopJob, startCompare, compareStatus, listCompares, isBusy } from './generate.js';
 import * as studio from './studio.js';
 import * as rigs from './rigs.js';
 import { prepare, retarget, restClip, isRest, fromStudio, toRbxmx, toLuauBuilder } from '../core/anim.js';
@@ -176,6 +178,7 @@ const routes = [
     if (!job) throw Object.assign(new Error('Unknown job.'), { status: 404 });
     return { ...job, elapsed: Math.round((Date.now() - job.startedAt) / 1000) };
   }],
+  ['POST', /^\/api\/jobs\/([a-z0-9]+)\/stop$/, async (req, [id]) => { stopJob(id); return { ok: true }; }],
   ['GET', /^\/api\/compare$/, async () => listCompares()],
   ['POST', /^\/api\/compare$/, async (req) => startCompare(await readBody(req))],
   ['GET', /^\/api\/compare\/([a-z0-9-]+)$/, async (req, [id]) => compareStatus(id)],
@@ -232,16 +235,38 @@ function trusted(req) {
   if (origin && origin.replace(/^https?:\/\//, '') !== req.headers.host) return false;
   return req.method === 'GET' || (req.headers['content-type'] ?? '').startsWith('application/json');
 }
+const fromThisComputer = req => /^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? '');
 // Settings choose which programs the server starts, so even with HOST=0.0.0.0 only this
 // computer may change or test them, never another device on the network.
 function localOnly(req) {
-  if (!/^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? '')) throw Object.assign(new Error('Settings can only be changed on the computer running OpenRig Studio.'), { status: 403 });
+  if (!fromThisComputer(req)) throw Object.assign(new Error('Settings can only be changed on the computer running OpenRig Studio.'), { status: 403 });
+}
+
+// With HOST set to a network address, other devices need the access token: the link printed at
+// start (?token=…) sets it as a cookie once. This computer itself never needs it.
+const TOKEN = LOOPBACK ? '' : (process.env.OPENRIG_TOKEN || randomBytes(18).toString('base64url'));
+const sameToken = value => typeof value === 'string' && value.length === TOKEN.length && timingSafeEqual(Buffer.from(value), Buffer.from(TOKEN));
+const cookieToken = req => (req.headers.cookie ?? '').split(';').map(c => c.trim().split('=')).find(([k]) => k === 'openrig_token')?.[1];
+// Returns true when the request may go on; otherwise it has already been answered.
+function admitted(req, res, url) {
+  if (!TOKEN || fromThisComputer(req)) return true;
+  if (sameToken(url.searchParams.get('token'))) {
+    res.writeHead(303, { Location: url.pathname, 'Set-Cookie': `openrig_token=${TOKEN}; HttpOnly; SameSite=Strict; Path=/`, ...SECURITY_HEADERS });
+    res.end();
+    return false;
+  }
+  if (sameToken(cookieToken(req))) return true;
+  const message = 'Open OpenRig Studio with the link that its terminal window shows (it contains ?token=…).';
+  if (url.pathname.startsWith('/api/')) send(res, 401, { error: message });
+  else send(res, 401, `<!doctype html><meta charset="utf-8"><title>OpenRig Studio</title><p style="font:16px system-ui;margin:3em">${message}</p>`, 'text/html; charset=utf-8');
+  return false;
 }
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
     if (!trusted(req)) return send(res, 403, { error: 'Request blocked: only the OpenRig Studio page itself can use this server.' });
+    if (!admitted(req, res, url)) return;
     if (req.method === 'GET' && await serveStatic(res, url.pathname)) return;
     for (const [method, pattern, handler] of routes) {
       const m = url.pathname.match(pattern);
@@ -268,7 +293,10 @@ server.on('error', e => {
 server.listen(PORT, HOST, async () => {
   if (Number(process.versions.node.split('.')[0]) < 22) console.warn(`  Node.js ${process.versions.node} is no longer supported and gets no security updates. Please install Node.js 22 or newer from https://nodejs.org.`);
   console.log(`OpenRig Studio is running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
-  if (!LOOPBACK) console.warn(`  WARNING: HOST=${HOST} makes OpenRig Studio reachable from other devices, without a password.\n  Anyone on your network can use your AI subscriptions and library. Unset HOST to keep it local.`);
+  if (!LOOPBACK) {
+    const lan = Object.values(os.networkInterfaces()).flat().find(a => a?.family === 'IPv4' && !a.internal)?.address ?? HOST;
+    console.warn(`  HOST=${HOST} makes OpenRig Studio reachable from other devices. They need this link once:\n    http://${HOST === '0.0.0.0' ? lan : HOST}:${PORT}/?token=${TOKEN}\n  Anyone with the link can use your AI subscriptions and library. Unset HOST to keep it local.`);
+  }
   const examples = await lib.seedExamples().catch(e => { console.error(`Could not add the example clips: ${e.message}`); return 0; });
   if (examples) console.log(`  Added ${examples} example clips to the library (folder "Examples").`);
   const providers = await listProviders();

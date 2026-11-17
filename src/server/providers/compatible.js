@@ -58,7 +58,7 @@ async function readWhole(res) {
   return { text: choice?.message?.content ?? '', usage: body.usage ?? null, finish: choice?.finish_reason ?? null };
 }
 
-export async function runCompatible({ url, key, maxTokens }, { model, effort, system, text, images = [] }) {
+export async function runCompatible({ url, key, maxTokens }, { model, effort, system, text, images = [], signal }) {
   if (!model) throw new Error('Choose a model. Add model ids for the OpenAI-compatible API in Settings.');
   const content = images.length
     ? [{ type: 'text', text }, ...images.map(img => ({ type: 'image_url', image_url: { url: `data:image/png;base64,${img.data.toString('base64')}` } }))]
@@ -66,7 +66,7 @@ export async function runCompatible({ url, key, maxTokens }, { model, effort, sy
   const res = await fetch(endpoint(url, '/chat/completions'), {
     method: 'POST',
     headers: headers(key),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]) : AbortSignal.timeout(TIMEOUT_MS),
     body: JSON.stringify({
       model,
       messages: [{ role: 'system', content: system }, { role: 'user', content }],

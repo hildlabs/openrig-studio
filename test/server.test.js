@@ -25,6 +25,19 @@ after(async () => {
   await rm(data, { recursive: true, force: true });
 });
 
+function call(method, route, body) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: route, method, headers: { 'Content-Type': 'application/json', Host: `localhost:${port}` } }, res => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', d => { text += d; });
+      res.on('end', () => resolve(JSON.parse(text)));
+    });
+    req.on('error', reject);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
+}
+
 // Sends the body in the given pieces, so a test can split a character between two chunks.
 function post(route, pieces) {
   return new Promise((resolve, reject) => {
@@ -54,4 +67,19 @@ test('broken JSON is answered with 400, not a server error', async () => {
   const res = await post('/api/clips', ['{"name": ']);
   assert.equal(res.status, 400);
   assert.match(res.body.error, /not valid JSON/);
+});
+
+test('the library list follows every change right away', async () => {
+  const clip = await post('/api/clips', [JSON.stringify({ name: 'List check' })]);
+  const find = async () => (await call('GET', '/api/clips')).clips.find(c => c.id === clip.body.id);
+  assert.equal((await find()).name, 'List check');
+  // Quick changes of the same length, so neither the size nor (often) the time of the file differs.
+  for (const name of ['List chek', 'List chec', 'List check']) {
+    await call('PATCH', `/api/clips/${clip.body.id}`, { name });
+    assert.equal((await find()).name, name);
+  }
+  await call('PATCH', `/api/clips/${clip.body.id}`, { starred: true });
+  assert.equal((await find()).starred, true);
+  await call('DELETE', `/api/clips/${clip.body.id}`);
+  assert.equal(await find(), undefined);
 });

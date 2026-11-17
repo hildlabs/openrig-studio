@@ -89,7 +89,7 @@ OpenRig Studio gives you a solid first draft, not a finished hand-keyed animatio
 - **It takes a while.** With Claude Code · Opus 5.5 · high (the default) a clip took 1 to 3.5 minutes in the benchmark, about 2 on average. Faster models and lower effort are quicker but less reliable.
 - **It uses your plan's limits.** One clip with visual review is two model calls and 6,000 to 22,000 output tokens. Free for the app, not free for your usage quota.
 - **Turning on the spot is the weak spot.** Planted feet still slide during spins and sitting down. Fast arm motions such as a cheer can snap between two keys; the checks flag these.
-- **Measured for one model so far.** The [benchmark](#benchmark) numbers are from Opus 5.5. Other models work, but nobody has measured them yet; runs for other models are very welcome.
+- **Measured for two models so far.** In the [benchmark](#benchmark) (20 cases, one run each, November 2026) Claude Code · Fable 5.2 · high made 19 of 20 clips without any finding (average score 0.05), Opus 5.5 · high 12 of 20 (0.95). Fable 5.2 took about 5 minutes per clip instead of 2 and used about 40% more tokens. Other models work, but nobody has measured them yet; runs for other models are very welcome.
 - **The checks catch technical problems,** like feet in the ground, limbs inside the body or snapping joints. Whether a motion looks good is still up to you.
 - **The Studio bridge needs Roblox Studio's built-in MCP server.** Without it, use *Export › Download .rbxmx* instead.
 - **Tested mainly on Windows.** macOS and Linux run the test suite in CI, but have seen far less real use.

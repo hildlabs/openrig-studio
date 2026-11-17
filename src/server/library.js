@@ -2,7 +2,7 @@
 // A clip keeps its history (generated, draft, edited, imported, restored) instead of version numbers.
 import path from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, stat } from 'node:fs/promises';
 import { ROOT, DATA } from './settings.js';
 import { writeJson, moveFile } from './files.js';
 import { prepare, restClip, cleanName } from '../core/anim.js';
@@ -46,20 +46,38 @@ export async function createClip(name = 'New animation', folder = '') {
   return saveClip(clip);
 }
 
+// The library list only needs a summary per clip, but a clip file holds its whole history and can
+// be large. Summaries are kept per file and re-read only when the file changed: every save writes a
+// new file and renames it over the old one, so the inode changes too, even within one clock tick.
+const summaries = new Map();
+function summary(c) {
+  const gen = c.history.findLast(h => h.kind === 'generated');
+  return {
+    id: c.id, name: c.name, folder: c.folder ?? '', starred: Boolean(c.starred), createdAt: c.createdAt, updatedAt: c.updatedAt,
+    duration: c.anim.keyframes.at(-1).t, loop: c.anim.loop, keyframes: c.anim.keyframes.length,
+    model: gen?.label ?? c.chat?.findLast(m => m.engine)?.engine ?? '', rig: c.rig ?? '', issues: (c.history.find(h => h.id === c.current)?.issues ?? []).length,
+  };
+}
 export async function listClips() {
   await mkdir(CLIPS, { recursive: true });
+  const files = readdirSync(CLIPS).filter(f => f.endsWith('.json'));
   const out = [];
-  for (const f of readdirSync(CLIPS).filter(f => f.endsWith('.json'))) {
+  for (const f of files) {
+    const file = path.join(CLIPS, f);
     try {
-      const c = JSON.parse(await readFile(path.join(CLIPS, f), 'utf8'));
-      const gen = c.history.findLast(h => h.kind === 'generated');
-      out.push({
-        id: c.id, name: c.name, folder: c.folder ?? '', starred: Boolean(c.starred), createdAt: c.createdAt, updatedAt: c.updatedAt,
-        duration: c.anim.keyframes.at(-1).t, loop: c.anim.loop, keyframes: c.anim.keyframes.length,
-        model: gen?.label ?? c.chat?.findLast(m => m.engine)?.engine ?? '', rig: c.rig ?? '', issues: (c.history.find(h => h.id === c.current)?.issues ?? []).length,
-      });
+      const { mtimeMs, size, ino } = await stat(file);
+      const key = `${mtimeMs}:${size}:${ino}`;
+      let entry = summaries.get(file);
+      if (entry?.key !== key) {
+        entry = { key, clip: summary(JSON.parse(await readFile(file, 'utf8'))) };
+        summaries.set(file, entry);
+      }
+      out.push({ ...entry.clip });
     } catch { /* skip unreadable files */ }
   }
+  // Forget clips that were deleted or moved to the trash.
+  const present = new Set(files.map(f => path.join(CLIPS, f)));
+  for (const file of summaries.keys()) if (!present.has(file)) summaries.delete(file);
   return out;
 }
 

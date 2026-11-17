@@ -119,7 +119,7 @@ main { min-height: 0; }
 .msg-bot details { margin-top: 6px; white-space: normal; }
 .msg-bot summary { cursor: pointer; font: 13px var(--ui); color: var(--ink-2); }
 .msg-bot ol, .msg-bot ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
-.job { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); font: 14px var(--ui); color: var(--ink-2); background: #eef2fb; }
+.job { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border-top: 1px solid var(--line); font: 14px var(--ui); color: var(--ink-2); background: #eef2fb; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--action); border-right-color: transparent; animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .composer { padding: 10px 12px 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; min-width: 0; }
@@ -317,3 +317,4 @@ table.clips tr.sel td { background: #edf2fd; }
   .inspector { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+#jobText { flex: 1; }

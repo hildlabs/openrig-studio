@@ -40,7 +40,7 @@ export function mount(el) {
         <div class="note hidden" id="engNote"></div>
       </div>
       <div class="thread" id="thread" aria-live="polite"></div>
-      <div class="job hidden" id="jobBar"><span class="spinner"></span><span id="jobText"></span></div>
+      <div class="job hidden" id="jobBar"><span class="spinner"></span><span id="jobText"></span><button class="btn quiet" id="stopBtn" data-l="job.stop"></button></div>
       <div class="composer">
         <textarea id="prompt" rows="3"></textarea>
         <div class="row">
@@ -239,6 +239,7 @@ function renderChat() {
 }
 function setBusy(on, text = '') {
   $('#jobBar', root).classList.toggle('hidden', !on);
+  $('#stopBtn', root).disabled = false;
   $('#jobText', root).textContent = text;
   for (const id of ['#sendBtn', '#improveBtn']) $(id, root).disabled = on;
 }
@@ -272,6 +273,7 @@ function poll(jobId, clipId) {
       setBusy(false);
       if (S.clip?.id !== clipId) return;
       if (job.status === 'done') { setClip(job.clip); setPlaying(true); }
+      else if (job.status === 'stopped') { toast(t('job.stopped')); setClip(await api(`/api/clips/${clipId}`), { keepTime: true, keepUndo: true }); }
       else { toast(job.error, true); setClip(await api(`/api/clips/${clipId}`), { keepTime: true, keepUndo: true }); }
     } catch (e) { clearInterval(timer); S.job = null; setBusy(false); toast(e.message, true); }
   }, 1000);
@@ -512,6 +514,11 @@ function wire() {
   $('#engCustom', root).addEventListener('change', e => prefs.set(`custom.${$('#engProvider', root).value}`, e.target.value.trim()));
   $('#review', root).checked = prefs.get('review', true);
   $('#sendBtn', root).addEventListener('click', () => generate('chat'));
+  $('#stopBtn', root).addEventListener('click', async () => {
+    if (!S.job) return;
+    $('#stopBtn', root).disabled = true;
+    try { await api(`/api/jobs/${S.job}/stop`, { method: 'POST', body: {} }); } catch (e) { toast(e.message, true); }
+  });
   $('#improveBtn', root).addEventListener('click', () => generate('improve'));
   $('#prompt', root).addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generate('chat'); } });
   $('#thread', root).addEventListener('click', async e => {

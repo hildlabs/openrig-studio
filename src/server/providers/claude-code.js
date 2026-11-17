@@ -10,7 +10,7 @@ export { CLAUDE_MODELS as MODELS } from './claude-models.js';
 export const find = settings => firstExisting([settings.claudePath, which('claude'),
   path.join(home, '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude')]);
 
-export async function runClaudeCode(exe, { model, effort, system, text, images = [] }) {
+export async function runClaudeCode(exe, { model, effort, system, text, images = [], signal }) {
   const work = await mkdtemp(path.join(os.tmpdir(), 'openrig-'));
   try {
     const systemFile = path.join(work, 'system.md');
@@ -22,7 +22,8 @@ export async function runClaudeCode(exe, { model, effort, system, text, images =
     args.push('--tools', images.length ? 'Read' : '');
     if (images.length) args.push('--allowedTools', 'Read');
     const input = images.length ? `${text}\n\nFirst read the image file${images.length > 1 ? 's' : ''} ${images.map(i => `./${i.name}`).join(', ')} with the Read tool and look at ${images.length > 1 ? 'them' : 'it'} carefully.` : text;
-    const r = await run(exe, args, { input, cwd: work });
+    const r = await run(exe, args, { input, cwd: work, signal });
+    if (r.aborted) throw signal.reason;
     if (r.timedOut) throw new Error('Claude Code did not answer within 15 minutes.');
     let out;
     try { out = JSON.parse(r.stdout); } catch { throw new Error(`Claude Code returned no readable answer: ${(r.stderr || r.stdout).trim().slice(-500)}`); }
