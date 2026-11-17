@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Compare** has Fable 5.2 ticked by default next to Opus 5.5 and GPT-6-Astra. In the benchmark it made the cleanest clips, but takes about 5 minutes per clip, so the editor keeps Opus 5.5 as its default.
 - **Stop a generation.** The bar under the director chat has a *Stop* button. The running model call is cancelled (Claude Code and Codex are ended, API requests aborted) and nothing is added to the clip.
 - **Structured output for the Anthropic API.** The answer is checked against the animation schema by the API itself, so it always comes back as valid JSON in the right shape.
 - **Access token for `HOST=0.0.0.0`.** Other devices on the network need the link with `?token=…` that the terminal shows once; the computer running OpenRig Studio doesn't. Set `OPENRIG_TOKEN` for a fixed token.
