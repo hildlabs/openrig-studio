@@ -1,6 +1,7 @@
 // Generation pipeline: draft → checks → optional visual review (the model sees a contact sheet
 // of its draft) → new history entry. Plus model comparisons (one clip per engine).
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { readFile, mkdir } from 'node:fs/promises';
 import { writeJson } from './files.js';
@@ -80,8 +81,12 @@ export function engineLabel(providers, { provider, model, effort }) {
 }
 
 // ---------- Jobs ----------
+// Finished jobs stay readable for a while (the editor and Compare poll them), then are dropped so
+// a long-running server doesn't keep every generated clip in memory.
+const JOB_TTL_MS = 60 * 60 * 1000;
 const jobs = new Map();
 const busy = new Set();
+const forgetLater = job => setTimeout(() => jobs.delete(job.id), JOB_TTL_MS).unref();
 export const isBusy = id => busy.has(id);
 export const getJob = id => jobs.get(id);
 
@@ -185,7 +190,7 @@ export async function startJob(params) {
     clip.chat.push({ role: 'user', text: params.prompt?.trim() || '', mode, at: now() });
     await saveClip(clip);
   } catch (e) { busy.delete(params.id); throw e; }
-  const job = { id: Math.random().toString(36).slice(2), clipId: params.id, status: 'running', step: 'start', startedAt: Date.now(), review: params.review !== false };
+  const job = { id: randomUUID().replaceAll('-', ''), clipId: params.id, status: 'running', step: 'start', startedAt: Date.now(), review: params.review !== false };
   jobs.set(job.id, job);
   generate(job, params)
     .then(clip => Object.assign(job, { status: 'done', clip }))
@@ -193,7 +198,7 @@ export async function startJob(params) {
       Object.assign(job, { status: 'error', error: e.message });
       try { const clip = await loadClip(params.id); clip.chat.push({ role: 'error', text: e.message, at: now() }); await saveClip(clip); } catch { /* clip gone */ }
     })
-    .finally(() => busy.delete(params.id));
+    .finally(() => { busy.delete(params.id); forgetLater(job); });
   return job;
 }
 

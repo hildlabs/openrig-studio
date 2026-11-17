@@ -164,6 +164,12 @@ function setClip(clip, { keepTime = false, keepUndo = false } = {}) {
 
 // ---------- Engine choice (provider → model → effort, remembered per provider) ----------
 const CUSTOM = '__custom';
+// A remembered model that is no longer listed (claude-fable-5-1) moves to the listed model of the
+// same family (claude-fable-5-2) instead of silently falling back to the first one.
+const successor = (models, id) => {
+  const family = /^(.*?-)\d+(?:-\d+)*$/.exec(id ?? '')?.[1];
+  return family ? models.find(m => m.id.startsWith(family) && /^\d/.test(m.id.slice(family.length)))?.id : undefined;
+};
 function renderEngine() {
   if (!root || !store.providers.length) return;
   const sel = $('#engProvider', root);
@@ -179,7 +185,7 @@ function fillModels() {
   const want = prefs.get(`model.${prov.id}`, prov.models[0]?.id ?? CUSTOM);
   const sel = $('#engModel', root);
   sel.innerHTML = prov.models.map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('') + `<option value="${CUSTOM}">${t('engine.custom')}</option>`;
-  sel.value = prov.models.some(m => m.id === want) || want === CUSTOM ? want : prov.models[0]?.id ?? CUSTOM;
+  sel.value = prov.models.some(m => m.id === want) || want === CUSTOM ? want : successor(prov.models, want) ?? prov.models[0]?.id ?? CUSTOM;
   $('#engCustom', root).value = prefs.get(`custom.${prov.id}`, '');
   const note = $('#engNote', root);
   note.textContent = t('engine.unavailable', { provider: prov.label });

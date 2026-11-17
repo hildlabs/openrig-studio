@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Claude Fable 5.2** replaces Fable 5.1 for Claude Code and the Anthropic API, with the refusal fallback. A remembered Fable 5.1 choice moves to Fable 5.2 on its own.
+- Fixed: text sent to the server could get a broken character (ä, ß, emoji) when it arrived in more than one piece. Broken JSON is now answered with 400 instead of 500, and unexpected server errors are logged with their stack.
+- Finished generation jobs are dropped from memory after an hour, so a server that runs for days doesn't keep every result.
 - **Live demo** at https://hildlabs.github.io/openrig-studio/: the real web app with a browser-only stand-in for the server (`demo/`). Play and edit the example clips, history, R6, contact sheets and `.rbxmx` / Luau export work; generating and the Studio bridge need a local install. `npm run build-demo` builds it, a workflow publishes it to GitHub Pages.
 
 ## 0.2.0

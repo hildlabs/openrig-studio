@@ -38,6 +38,9 @@ async function session(fn) {
   child.stderr.on('data', d => { stderr = (stderr + d).slice(-2000); });
   const fail = e => { for (const w of pending.values()) { clearTimeout(w.timer); w.reject(e); } pending.clear(); };
   child.on('error', fail);
+  // Writing to a StudioMCP that already exited emits EPIPE on stdin; without a listener that
+  // would crash the whole server. The exit handler above already rejects what is pending.
+  child.stdin.on('error', () => {});
   child.on('exit', code => fail(new Error(`StudioMCP exited (${code}). ${stderr}`)));
   const request = (method, params, timeout = 60000) => new Promise((resolve, reject) => {
     const id = nextId++;
